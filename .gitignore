@@ -1,0 +1,11 @@
+node_modules/
+
+# Local only: session notes and agent instructions.
+memory/
+CLAUDE.md
+.claude/
+
+# Render output from tests/fp2-companion-render.js.
+*.html
+*.png
+!docs/images/*.png

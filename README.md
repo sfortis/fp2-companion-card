@@ -1,0 +1,113 @@
+# FP2 Companion Card
+
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-companion-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
+[![HACS](https://img.shields.io/badge/HACS-custom-orange)](https://hacs.xyz/)
+
+A Lovelace card for the Aqara FP2 presence sensor: its settings, a zone
+editor with backups, and the live targets on the zone map, the way the Aqara
+app shows them.
+
+The card is the front end of the
+[FP2 Companion](https://github.com/sfortis/fp2-companion) AppDaemon app,
+which does the work. The app talks to the Aqara cloud, creates the entities
+and keeps the backups, and the card shows them and sends its commands to the
+app over MQTT. Install the app first, because the card does nothing without it.
+
+<p align="center">
+  <img src="docs/images/zones.png" width="380" alt="The Zones tab: the zone map with live targets and the zone list">
+  <img src="docs/images/settings.png" width="380" alt="The Settings tab: AI person detection, AI learning, sensitivity and approach distance">
+</p>
+
+> **Unofficial.** This project is not affiliated with Aqara or Lumi.
+
+## Installation
+
+1. Install and set up the [FP2 Companion](https://github.com/sfortis/fp2-companion)
+   app.
+2. In HACS, add `https://github.com/sfortis/fp2-companion-card` as a custom
+   repository of type **Dashboard**, and download **FP2 Companion Card**.
+   HACS adds the dashboard resource for it and updates it on every release.
+3. Add the card to a dashboard:
+
+```yaml
+type: custom:fp2-companion-card
+```
+
+### Moving From the Card the App Installed
+
+Up to version 1.3, the FP2 Companion app copied this card into Home
+Assistant's `www/fp2-companion/` folder and added a dashboard resource for
+it. Newer versions of the app no longer do that, so the copy stops receiving
+updates. After installing the card from HACS:
+
+1. In **Settings > Dashboards**, open **Resources** from the menu at the
+   top right, and delete the resource whose URL starts with
+   `/local/fp2-companion/`.
+2. Delete the folder `www/fp2-companion/` from your Home Assistant
+   configuration folder.
+3. Reload the browser.
+
+Until the old resource is gone, both copies load. The one that loads first
+is used and the other one does nothing, so the card keeps working, but it
+may be the old version.
+
+## Options
+
+| Option | Default | Meaning |
+|---|---|---|
+| `title` | `Presence sensor` | The card's title |
+| `device` | none | Pins the card to one FP2, by its serial, entity prefix, device id or name, and hides the device picker |
+| `devices_entity` | `sensor.fp2_companion_devices` | The app's own sensor |
+| `command_root` | `fp2companion` | The app's MQTT prefix |
+| `entities` | `{}` | Overrides for entity ids renamed in the registry, on a pinned card |
+| `language` | the user's | The card's language, like `it`. Empty follows the Home Assistant user's language; English and Italian ship with the card |
+| `text` | per language | Any word on the card, over the language's own |
+
+## Using It
+
+The card has four tabs.
+
+- **Zones** shows the map, the live dots and the legend. Press a zone to
+  pick it out on the map, or **Edit** to change it. Editing paints blocks by
+  tapping or dragging. **Delete** needs a second press. The FP2 looks at
+  every block outside the room's edge, so an edge drawn as a frame around
+  the room leaves everything beyond the frame in the room. The card says so,
+  and **Fill outside** in the edge's editor adds those blocks to the edge.
+- **Settings** has AI person detection, sensitivity, approach distance and
+  AI learning. While AI person detection is on, the sensor sets its own
+  sensitivity and ignores changes to it, so the control is disabled.
+- **Backups** lists the zone backups. Choosing one previews it on the map,
+  and **Restore** needs a second press.
+- **Account** shows the Aqara account, until when the session is valid,
+  **Change login** and **Log out**, which needs a second press.
+
+The cloud icon at the top shows the app's status: green with a check when
+all is well, amber with an exclamation mark for a warning, and red with a
+cross when there is no session. The line under it explains anything that is
+not green.
+
+The live view runs only while the card's map is on screen, and stops when
+the card is scrolled away or the screen goes off. It needs an **admin**
+Home Assistant user, because it listens through Home Assistant's own MQTT
+subscription, which is open to admins only. Everything else works for any
+user.
+
+## Translations
+
+The card follows the Home Assistant user's language. A language lives in
+`TRANSLATIONS` in `fp2-companion-card.js`, under the first part of its
+language code. A word a language does not have shows in English.
+
+## Development
+
+```
+NODE_PATH="$(npm root -g)" node tests/fp2-companion-smoke.js
+```
+
+The test needs `jsdom` installed globally, and Python's `cryptography` for
+its RSA check. `tests/fp2-companion-render.js` renders the card from a live
+Home Assistant to an HTML file for a headless browser screenshot.
+
+## License
+
+MIT

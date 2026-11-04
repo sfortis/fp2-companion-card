@@ -1,7 +1,7 @@
 /*
  * Smoke test for fp2-companion-card, in jsdom, with no Home Assistant and no browser.
  *
- *   NODE_PATH="$(npm root -g)" node tests/card/fp2-companion-smoke.js
+ *   NODE_PATH="$(npm root -g)" node tests/fp2-companion-smoke.js
  *
  * What it can prove: that every status renders without throwing, that the map
  * draws one cell per block in the right place, that overlaps and the
@@ -16,7 +16,7 @@ const path = require('path');
 
 const { JSDOM } = require('jsdom');
 
-const CARD = process.env.CARD_PATH || path.join(__dirname, '..', '..', 'apps', 'fp2_companion', 'card', 'fp2-companion-card.js');
+const CARD = process.env.CARD_PATH || path.join(__dirname, '..', 'fp2-companion-card.js');
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
 Object.assign(global, {
   window: dom.window, document: dom.window.document,
@@ -127,11 +127,21 @@ function segButtons(root, index) {
   return [...root.querySelectorAll('.seg')[index].querySelectorAll('button')];
 }
 
+/* ---------- a second copy of the card ---------- */
+{
+  const entries = window.customCards.length;
+  let error = null;
+  try { new Function(SOURCE)(); } catch (e) { error = e; }
+  ok(error === null, 'a second copy of the card loads without an error');
+  eq(window.customCards.length, entries, 'and adds no second picker entry');
+  ok(customElements.get('fp2-companion-card') === Card, 'and leaves the first element in place');
+}
+
 /* ---------- the card picker and the sections view ---------- */
 {
   const entry = window.customCards.find((c) => c.type === 'fp2-companion-card');
   ok(entry && entry.preview === true, 'the picker shows a live preview');
-  ok(entry && /^https:\/\/github\.com\/sfortis\/fp2-companion/.test(entry.documentationURL),
+  ok(entry && /^https:\/\/github\.com\/sfortis\/fp2-companion-card$/.test(entry.documentationURL),
     'and links the documentation');
   const grid = new Card().getGridOptions();
   ok(grid.columns === 12 && grid.rows === 'auto' && grid.min_columns === 6,

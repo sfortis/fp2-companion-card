@@ -2628,16 +2628,21 @@ class Fp2CompanionCard extends HTMLElement {
   }
 }
 
-customElements.define('fp2-companion-card', Fp2CompanionCard);
+/* A second copy of the card can load while an old dashboard resource still
+ * points at the copy the app used to install. Defining the element twice
+ * throws, so the copy that loads second leaves the first one in place. */
+if (!customElements.get('fp2-companion-card')) {
+  customElements.define('fp2-companion-card', Fp2CompanionCard);
 
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: 'fp2-companion-card',
-  name: 'FP2 Companion Card',
-  description: 'An Aqara FP2\'s settings and zone editor, from the fp2_companion app.',
-  preview: true,
-  documentationURL: 'https://github.com/sfortis/fp2-companion#2-the-card',
-});
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: 'fp2-companion-card',
+    name: 'FP2 Companion Card',
+    description: 'An Aqara FP2\'s settings and zone editor, from the fp2_companion app.',
+    preview: true,
+    documentationURL: 'https://github.com/sfortis/fp2-companion-card',
+  });
+}
 
 console.info(`%c FP2-COMPANION-CARD %c ${CARD_VERSION} `,
   'color: white; background: #2196f3; font-weight: 700;',
