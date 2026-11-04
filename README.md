@@ -11,11 +11,21 @@ The card is the front end of the
 [FP2 Companion](https://github.com/sfortis/fp2-companion) AppDaemon app,
 which does the work. The app talks to the Aqara cloud, creates the entities
 and keeps the backups, and the card shows them and sends its commands to the
-app over MQTT. Install the app first, because the card does nothing without it.
+app over MQTT.
+
+## Requirements
+
+- The [FP2 Companion](https://github.com/sfortis/fp2-companion) app,
+  installed and signed in to Aqara. The card does nothing without it. The
+  app's own requirements are listed in
+  [its README](https://github.com/sfortis/fp2-companion#requirements).
+- HACS, which installs the card and adds its dashboard resource.
+- An **admin** Home Assistant user for the live view. Everything else works
+  for any user.
 
 <p align="center">
-  <img src="docs/images/zones.png" width="380" alt="The Zones tab: the zone map with live targets and the zone list">
-  <img src="docs/images/settings.png" width="380" alt="The Settings tab: AI person detection, AI learning, sensitivity and approach distance">
+  <img src="https://raw.githubusercontent.com/sfortis/fp2-companion-card/main/docs/images/zones.png" width="380" alt="The Zones tab: the zone map with live targets and the zone list">
+  <img src="https://raw.githubusercontent.com/sfortis/fp2-companion-card/main/docs/images/settings.png" width="380" alt="The Settings tab: AI person detection, AI learning, sensitivity and approach distance">
 </p>
 
 > **Unofficial.** This project is not affiliated with Aqara or Lumi.
