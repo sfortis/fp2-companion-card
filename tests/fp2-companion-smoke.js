@@ -130,11 +130,16 @@ function segButtons(root, index) {
 /* ---------- a second copy of the card ---------- */
 {
   const entries = window.customCards.length;
+  const warned = [];
+  const warn = console.warn;
+  console.warn = (...a) => warned.push(a.join(' '));
   let error = null;
-  try { new Function(SOURCE)(); } catch (e) { error = e; }
+  try { new Function(SOURCE)(); } catch (e) { error = e; } finally { console.warn = warn; }
   ok(error === null, 'a second copy of the card loads without an error');
   eq(window.customCards.length, entries, 'and adds no second picker entry');
   ok(customElements.get('fp2-companion-card') === Card, 'and leaves the first element in place');
+  ok(warned.length === 1 && /\d+\.\d+\.\d+ loaded first/.test(warned[0])
+    && warned[0].includes('/local/fp2-companion/'), 'and says which copy runs and what to remove');
 }
 
 /* ---------- the card picker and the sections view ---------- */

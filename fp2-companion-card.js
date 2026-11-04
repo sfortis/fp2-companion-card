@@ -45,7 +45,7 @@
  * one login and keeps only the token.
  */
 
-const CARD_VERSION = '1.18.0';
+const CARD_VERSION = '1.19.0';
 
 /* A radar fan. Decorative only: it never changes with state. */
 const RADAR_ICON = `
@@ -1025,6 +1025,9 @@ class Fp2CompanionCard extends HTMLElement {
     this._liveFailed = false;
     this._liveSync();
   }
+
+  /* Read by a second copy of the card, to name the copy that runs. */
+  static get version() { return CARD_VERSION; }
 
   static getStubConfig() {
     return { type: 'custom:fp2-companion-card' };
@@ -2630,8 +2633,10 @@ class Fp2CompanionCard extends HTMLElement {
 
 /* A second copy of the card can load while an old dashboard resource still
  * points at the copy the app used to install. Defining the element twice
- * throws, so the copy that loads second leaves the first one in place. */
-if (!customElements.get('fp2-companion-card')) {
+ * throws, so the copy that loads second leaves the first one in place and
+ * says which copy runs. Copies before 1.19.0 have no version to read. */
+const runningCard = customElements.get('fp2-companion-card');
+if (!runningCard) {
   customElements.define('fp2-companion-card', Fp2CompanionCard);
 
   window.customCards = window.customCards || [];
@@ -2642,8 +2647,13 @@ if (!customElements.get('fp2-companion-card')) {
     preview: true,
     documentationURL: 'https://github.com/sfortis/fp2-companion-card',
   });
-}
 
-console.info(`%c FP2-COMPANION-CARD %c ${CARD_VERSION} `,
-  'color: white; background: #2196f3; font-weight: 700;',
-  'color: #2196f3; background: white; font-weight: 700;');
+  console.info(`%c FP2-COMPANION-CARD %c ${CARD_VERSION} `,
+    'color: white; background: #2196f3; font-weight: 700;',
+    'color: #2196f3; background: white; font-weight: 700;');
+} else {
+  console.warn(`fp2-companion-card ${CARD_VERSION} is not used, because `
+    + `${runningCard.version || 'an older copy'} loaded first. Remove the `
+    + 'dashboard resource that starts with /local/fp2-companion/, or any '
+    + 'other resource that loads fp2-companion-card.js, and reload.');
+}

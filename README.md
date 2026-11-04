@@ -35,7 +35,7 @@ type: custom:fp2-companion-card
 
 ### Moving From the Card the App Installed
 
-Up to version 1.3, the FP2 Companion app copied this card into Home
+Up to version 1.3.1, the FP2 Companion app copied this card into Home
 Assistant's `www/fp2-companion/` folder and added a dashboard resource for
 it. Newer versions of the app no longer do that, so the copy stops receiving
 updates. After installing the card from HACS:
@@ -47,9 +47,14 @@ updates. After installing the card from HACS:
    configuration folder.
 3. Reload the browser.
 
-Until the old resource is gone, both copies load. The one that loads first
-is used and the other one does nothing, so the card keeps working, but it
-may be the old version.
+If you had added a resource for the card by hand, for example with
+`card_install: false`, delete that one too, so that only the HACS resource
+loads the card.
+
+Until the old resource is gone, both copies load and the one that loads
+first is used, which may be the old version. The browser console then shows
+a warning, or an error from a copy older than 1.19.0, but the card keeps
+working.
 
 ## Options
 
