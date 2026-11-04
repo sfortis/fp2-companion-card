@@ -1,7 +1,7 @@
 # FP2 Companion Card
 
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-companion-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/)
-[![HACS](https://img.shields.io/badge/HACS-custom-orange)](https://hacs.xyz/)
+[![HACS](https://img.shields.io/badge/HACS-default-41BDF5)](https://hacs.xyz/)
 
 A Lovelace card for the Aqara FP2 presence sensor: its settings, a zone
 editor with backups, and the live targets on the zone map, the way the Aqara
@@ -24,9 +24,11 @@ app over MQTT. Install the app first, because the card does nothing without it.
 
 1. Install and set up the [FP2 Companion](https://github.com/sfortis/fp2-companion)
    app.
-2. In HACS, add `https://github.com/sfortis/fp2-companion-card` as a custom
-   repository of type **Dashboard**, and download **FP2 Companion Card**.
-   HACS adds the dashboard resource for it and updates it on every release.
+2. In HACS, search for **FP2 Companion Card** and download it. If the
+   search does not find it yet, add
+   `https://github.com/sfortis/fp2-companion-card` as a custom repository of
+   type **Dashboard** instead. HACS adds the dashboard resource for the card
+   and updates it on every release.
 3. Add the card to a dashboard:
 
 ```yaml
