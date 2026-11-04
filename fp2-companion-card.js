@@ -100,6 +100,12 @@ const DEFAULTS = {
     no_status: 'No {entity}. The app serves this FP2, so its entities may have '
       + 'other ids: name them under entities: on a card pinned with device:.',
     device_missing: 'The FP2 {device} is not among the devices the app serves.',
+    editor: {
+      title: 'Title',
+      device: 'FP2',
+      device_hint: 'Pins the card to one FP2, by its serial, entity prefix or name, '
+        + 'and hides the picker. Empty shows every FP2.',
+    },
     country: 'Country',
     sensitivity: 'Sensitivity',
     sensitivity_hint: 'How readily a person is detected.',
@@ -226,6 +232,12 @@ const TRANSLATIONS = {
     no_status: "{entity} non c'è. L'app gestisce questo FP2, quindi le sue entità potrebbero "
       + 'avere altri id: indicale sotto entities: in una card fissata con device:.',
     device_missing: "L'FP2 {device} non è tra i dispositivi gestiti dall'app.",
+    editor: {
+      title: 'Titolo',
+      device: 'FP2',
+      device_hint: "Fissa la card su un FP2, indicato col seriale, il prefisso delle entità "
+        + "o il nome, e nasconde la scelta del dispositivo. Vuoto mostra tutti gli FP2.",
+    },
     country: 'Paese',
     sensitivity: 'Sensibilità',
     sensitivity_hint: 'Quanto facilmente viene rilevata una persona.',
@@ -1037,16 +1049,20 @@ class Fp2CompanionCard extends HTMLElement {
    * by hand. Entity overrides and words are YAML only, so a config that has
    * them opens in the YAML editor, where nothing of them can be lost. */
   static getConfigForm() {
-    const labels = { title: 'Title', device: 'FP2' };
-    const helpers = { device: 'Pins the card to one FP2, by its serial, entity prefix '
-      + 'or name, and hides the picker. Empty shows every FP2.' };
+    /* The editor gets no hass, so the user's language comes from the page,
+     * where Home Assistant sets it as the lang of <html>. The card's own
+     * `language` wins for the labels, which the form computes from the
+     * config; it hands the help no config, so the help follows the page. */
+    const words = (config) => cardText({}, cardLanguage(config && config.language,
+      { language: document.documentElement.lang })).editor;
+    const helpers = { device: 'device_hint' };
     return {
       schema: [
         { name: 'title', selector: { text: {} } },
         { name: 'device', selector: { text: {} } },
       ],
-      computeLabel: (s) => labels[s.name],
-      computeHelper: (s) => helpers[s.name],
+      computeLabel: (s, config) => words(config)[s.name],
+      computeHelper: (s, config) => (helpers[s.name] ? words(config)[helpers[s.name]] : undefined),
       assertConfig: (config) => {
         const yamlOnly = ['entities', 'text'].filter((k) => config[k] !== undefined);
         if (yamlOnly.length) throw new Error(`${yamlOnly.join(', ')} is set in YAML`);

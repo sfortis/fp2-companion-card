@@ -162,6 +162,18 @@ function segButtons(root, index) {
     threw = true;
   }
   ok(threw, 'and leaves a config with entity overrides to YAML');
+  const title = form.schema[0];
+  const device = form.schema[1];
+  document.documentElement.lang = 'en';
+  eq(form.computeLabel(title, {}), 'Title', 'the editor labels are in English');
+  ok(form.computeHelper(device, {}).startsWith('Pins the card'), 'and so is the help');
+  eq(form.computeHelper(title, {}), undefined, 'a field without help has none');
+  document.documentElement.lang = 'it-IT';
+  eq(form.computeLabel(title, {}), 'Titolo', 'in the language Home Assistant sets on the page');
+  ok(form.computeHelper(device, {}).startsWith('Fissa la card'), 'help included');
+  eq(form.computeLabel(title, { language: 'en' }), 'Title', 'while the card\'s language wins');
+  document.documentElement.lang = '';
+  eq(form.computeLabel(title, undefined), 'Title', 'and English without either');
 }
 
 /* ---------- languages ---------- */
