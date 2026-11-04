@@ -45,7 +45,7 @@
  * one login and keeps only the token.
  */
 
-const CARD_VERSION = '1.19.0';
+const CARD_VERSION = '1.20.0';
 
 /* A radar fan. Decorative only: it never changes with state. */
 const RADAR_ICON = `
