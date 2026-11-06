@@ -37,12 +37,9 @@
  * (docs/DESIGN.md, decisions 17 and 18). The entity ids follow from
  * the chosen device's prefix.
  *
- * Signing in happens here too, as onboarding (docs/DESIGN.md,
- * decisions 15 and 16). Without a session the card shows only an email and
- * password form. The password never leaves the browser in clear: the card
- * takes its MD5 and encrypts that with Aqara's public RSA key, exactly as the
- * official app does, and sends only the encrypted block. The app uses it for
- * one login and keeps only the token.
+ * Signing in is the integration's, in Home Assistant's config flow
+ * (decision 28 of the integration). Without a session the card says so and
+ * where to sign in.
  */
 
 const CARD_VERSION = '1.20.1';
@@ -180,20 +177,13 @@ const DEFAULTS = {
     last_read: 'Read {ago}',
     never_read: 'Not read yet',
     token: 'Session valid until {date}',
-    sign_in_title: 'Sign in to Aqara',
-    sign_in_hint: 'The password is encrypted on this device before it is sent, '
-      + 'and only the session is kept.',
-    email: 'Email',
-    password: 'Password',
-    sign_in: 'Sign in',
-    choose_country: 'Choose your country',
-    signing_in: 'Signing in...',
     needs_admin: 'Only an admin user can change this.',
     command_failed: 'The command failed:',
     signed_in_as: 'Signed in as {account}',
     signed_in: 'Signed in',
-    change_login: 'Change login',
-    log_out: 'Log out',
+    signed_out: 'Not signed in',
+    account_hint: 'To sign in again or change the account, open Settings, '
+      + 'Devices & services, Aqara FP2 Companion, and choose Reconfigure.',
     /* One per status code the app publishes. The card decides on the code and
      * never on the app's message text. */
     status: {
@@ -315,20 +305,13 @@ const TRANSLATIONS = {
     last_read: 'Letto {ago}',
     never_read: 'Non ancora letto',
     token: 'Sessione valida fino al {date}',
-    sign_in_title: 'Accedi ad Aqara',
-    sign_in_hint: 'La password viene cifrata su questo dispositivo prima di essere '
-      + 'inviata, e si conserva solo la sessione.',
-    email: 'Email',
-    password: 'Password',
-    sign_in: 'Accedi',
-    choose_country: 'Scegli il tuo paese',
-    signing_in: 'Accesso in corso...',
     needs_admin: 'Solo un utente amministratore può modificarlo.',
     command_failed: 'Il comando non è riuscito:',
     signed_in_as: 'Accesso come {account}',
     signed_in: 'Accesso effettuato',
-    change_login: 'Cambia account',
-    log_out: 'Esci',
+    signed_out: 'Accesso non effettuato',
+    account_hint: 'Per accedere di nuovo o cambiare account, apri Impostazioni, '
+      + 'Dispositivi e servizi, Aqara FP2 Companion, e scegli Riconfigura.',
     status: {
       starting: 'Avvio',
       ok: 'Cloud OK',
@@ -361,17 +344,6 @@ function cardLanguage(configured, hass) {
  * card config's own words over both. */
 function cardText(userText, language) {
   return deepDefaults(userText, deepDefaults(TRANSLATIONS[language], DEFAULTS.text));
-}
-
-/* A country's name in the card's language, where the browser knows it, else
- * the English name the app sends. */
-function countryName(code, name, language) {
-  if (language === 'en' || typeof Intl === 'undefined' || !Intl.DisplayNames) return name;
-  try {
-    return new Intl.DisplayNames([language], { type: 'region' }).of(code) || name;
-  } catch (e) {
-    return name;
-  }
 }
 
 /* The status codes that need someone to act, against the ones that only
@@ -649,25 +621,6 @@ button.arm { background: var(--error-color, #f44336);
 .account .sess { font-size: 11px; margin-top: 2px; }
 .account .abtns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .account button { padding: 5px 12px; font-size: 12px; }
-.signin { margin-top: 10px; padding: 12px; border-radius: 8px;
-          border: 1px solid var(--divider-color); }
-.signin .ttl { font-size: 14px; font-weight: 500; color: var(--primary-text-color);
-               margin-bottom: 4px; }
-.signin .sub { font-size: 11px; color: var(--secondary-text-color);
-               margin-bottom: 10px; }
-.signin label { display: block; font-size: 12px; color: var(--secondary-text-color);
-                margin: 8px 0 3px; }
-.signin select { width: 100%; box-sizing: border-box; font: inherit;
-                 font-size: 14px; padding: 8px; border-radius: 6px;
-                 border: 1px solid var(--divider-color);
-                 background: var(--card-background-color, transparent);
-                 color: var(--primary-text-color); }
-.signin input { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px;
-                padding: 8px; border-radius: 6px; border: 1px solid var(--divider-color);
-                background: var(--card-background-color, transparent);
-                color: var(--primary-text-color); }
-.signin .btns { display: flex; gap: 8px; margin-top: 12px; }
-.signin .btns button { padding: 8px 16px; font-size: 13px; }
 .foot button { padding: 7px 14px; font-size: 13px; }
 .err { padding: 16px; color: var(--error-color, #f44336); font-size: 13px; }
 `;
@@ -776,18 +729,6 @@ function storeDevice(key) {
 }
 
 /* The column titles above the legend, in the same grid as its rows. */
-/* The country to offer first: the session's, else the first of the browser's
- * languages that names a country on the list (el-GR is Greece, en-US the
- * United States), else none, so the person chooses (owner, 2026-10-31). */
-function defaultCountry(sessionCountry, codes, languages) {
-  if (sessionCountry && codes.includes(sessionCountry)) return sessionCountry;
-  for (const lang of languages || []) {
-    const region = String(lang).split('-')[1];
-    if (region && codes.includes(region.toUpperCase())) return region.toUpperCase();
-  }
-  return '';
-}
-
 function legendHeader(text) {
   const row = el('div', 'row head');
   row.appendChild(el('div', ''));
@@ -853,92 +794,6 @@ function shutOff(edge, seeds, grid) {
   return out;
 }
 
-/* ---------- the password, encrypted in the browser ---------- */
-
-/* Aqara's public 1024-bit login key, the one the official app and
- * tools/login.py use (aqara_cloud.LOGIN_PUBKEY_PEM), as modulus and exponent. */
-const AQARA_RSA_N = BigInt('0x86e3ab25079ef4d77249b3856f8f9715c8ca51f5bf81d85f9825'
-  + '4eaa8411186e212621d5a914fa4eb818a40ecd8570f4b5f4c896ab522b9b126d908086baba88'
-  + '99152de253faf3c2169449aa1df4b14917f6f9a1f4707f15599d8e6999f90d64881c83c11769'
-  + '3133bd6af2cb66a18895d2866cad9cc11ec32e0700382d077107');
-const AQARA_RSA_E = BigInt(65537);
-
-/* MD5 over the UTF-8 bytes of a string, as lowercase hex: what Python's
- * hashlib.md5(password.encode()).hexdigest() gives. WebCrypto has no MD5. */
-function md5Hex(text) {
-  const bytes = new TextEncoder().encode(text);
-  const K = [];
-  for (let i = 0; i < 64; i += 1) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 2 ** 32) >>> 0;
-  const S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
-  const len = bytes.length;
-  const padded = new Uint8Array((((len + 8) >> 6) + 1) * 64);
-  padded.set(bytes);
-  padded[len] = 0x80;
-  const bits = len * 8;
-  for (let i = 0; i < 8; i += 1) padded[padded.length - 8 + i] = Math.floor(bits / 2 ** (8 * i)) & 0xff;
-  let a0 = 0x67452301; let b0 = 0xefcdab89; let c0 = 0x98badcfe; let d0 = 0x10325476;
-  for (let off = 0; off < padded.length; off += 64) {
-    const M = [];
-    for (let i = 0; i < 16; i += 1) {
-      M[i] = padded[off + i * 4] | (padded[off + i * 4 + 1] << 8)
-        | (padded[off + i * 4 + 2] << 16) | (padded[off + i * 4 + 3] << 24);
-    }
-    let A = a0; let B = b0; let C = c0; let D = d0;
-    for (let i = 0; i < 64; i += 1) {
-      let F; let g;
-      if (i < 16) { F = (B & C) | (~B & D); g = i; }
-      else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
-      else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
-      else { F = C ^ (B | ~D); g = (7 * i) % 16; }
-      const s = S[(i >> 4) * 4 + (i % 4)];
-      const sum = (A + F + K[i] + M[g]) >>> 0;
-      A = D; D = C; C = B;
-      B = (B + ((sum << s) | (sum >>> (32 - s)))) >>> 0;
-    }
-    a0 = (a0 + A) >>> 0; b0 = (b0 + B) >>> 0; c0 = (c0 + C) >>> 0; d0 = (d0 + D) >>> 0;
-  }
-  return [a0, b0, c0, d0].map((w) => [0, 8, 16, 24]
-    .map((sh) => ((w >>> sh) & 0xff).toString(16).padStart(2, '0')).join('')).join('');
-}
-
-function modPow(base, exp, mod) {
-  let result = BigInt(1);
-  let b = base % mod;
-  let e = exp;
-  while (e > BigInt(0)) {
-    if (e & BigInt(1)) result = (result * b) % mod;
-    e >>= BigInt(1);
-    b = (b * b) % mod;
-  }
-  return result;
-}
-
-/* RSAES-PKCS1-v1_5 encryption, base64: the same block Python's
- * cryptography makes with padding.PKCS1v15(). WebCrypto offers only OAEP.
- * `randomBytes(n)` returns n random bytes; zeros are drawn again, because
- * the padding string must not contain any. */
-function rsaPkcs1v15(message, n = AQARA_RSA_N, e = AQARA_RSA_E,
-  randomBytes = (k) => crypto.getRandomValues(new Uint8Array(k))) {
-  const k = Math.ceil(n.toString(16).length / 2);
-  const msg = new TextEncoder().encode(message);
-  if (msg.length > k - 11) throw new Error('message too long for the key');
-  const ps = [];
-  while (ps.length < k - 3 - msg.length) {
-    randomBytes(k).forEach((x) => { if (x && ps.length < k - 3 - msg.length) ps.push(x); });
-  }
-  const em = [0, 2, ...ps, 0, ...msg];
-  const m = BigInt(`0x${em.map((x) => x.toString(16).padStart(2, '0')).join('')}`);
-  const hex = modPow(m, e, n).toString(16).padStart(k * 2, '0');
-  let bin = '';
-  for (let i = 0; i < hex.length; i += 2) bin += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
-  return btoa(bin);
-}
-
-/* What the app's login command takes in place of the password. */
-function encryptPassword(password) {
-  return rsaPkcs1v15(md5Hex(password));
-}
-
 /* A press that acts only on the second press within ARM_MS. The house
  * pattern from lg-oled-card: no dialog, the button itself asks. */
 function armedButton(label, confirmLabel, action) {
@@ -980,7 +835,6 @@ class Fp2CompanionCard extends HTMLElement {
     this._focus = null;      // rangeId picked out from the legend
     this._paint = null;      // 'add' or 'remove' while a drag is painting
     this._sentText = null;   // what the message line says while waiting
-    this._changingLogin = false;
     /* The live positions: which device this card watches, the websocket
      * unsubscribe and the last message. The open subscription is the card's
      * lease, so every card (every browser tab) leases on its own. */
@@ -1118,9 +972,9 @@ class Fp2CompanionCard extends HTMLElement {
       return;
     }
     if (!this._device || this._device.key !== device.key) this._switchTo(device);
-    /* The picker and the country list are built with the card, so a new
-     * device, a renamed one or a new country list rebuilds it. */
-    const hubKey = JSON.stringify([devices, hub.attributes.countries]);
+    /* The picker is built with the card, so a new device or a renamed one
+     * rebuilds it. */
+    const hubKey = JSON.stringify(devices);
     if (this._refs && hubKey !== this._hubKey) this._refs = null;
     this._hubKey = hubKey;
     this._hub = hub;
@@ -1468,14 +1322,8 @@ class Fp2CompanionCard extends HTMLElement {
     r.message.setAttribute('role', 'status');
     body.appendChild(r.message);
 
-    r.signin = this._buildSignin();
-    /* Signed out, the form stands here in place of the tabs; signed in, a
-     * Change login opens it on the Account pane (_update moves it). */
-    r.signinSlot = el('div', '');
-    r.signinSlot.appendChild(r.signin.panel);
-    body.appendChild(r.signinSlot);
-    /* Everything below needs a session, so it is one block the sign-in can
-     * hide while there is none. */
+    /* Everything below needs a session, so it is one block that is hidden
+     * while there is none; the message line then says where to sign in. */
     const main = el('div', '');
     r.main = main;
     body.appendChild(main);
@@ -1567,18 +1415,9 @@ class Fp2CompanionCard extends HTMLElement {
     r.account.appendChild(r.who);
     r.session = el('div', 'sess', '');
     r.account.appendChild(r.session);
-    const abtns = el('div', 'abtns');
-    r.change = el('button', '', t.change_login);
-    r.change.addEventListener('click', () => {
-      this._changingLogin = !this._changingLogin;
-      this._update();
-    });
-    abtns.appendChild(r.change);
-    abtns.appendChild(armedButton(t.log_out, t.confirm, () => {
-      this._changingLogin = false;
-      this._command('logout', {}, false);
-    }));
-    r.account.appendChild(abtns);
+    /* The sign-in is the integration's own (Reconfigure, and the reauth Home
+     * Assistant offers when the session is gone). */
+    r.account.appendChild(el('div', 'sub', t.account_hint));
     accountGroup.appendChild(r.account);
     r.panes.account.appendChild(accountGroup);
 
@@ -1596,92 +1435,6 @@ class Fp2CompanionCard extends HTMLElement {
     this._showPane();
     this._zonesKey = null;
     this._backupsKey = null;
-  }
-
-  /* The sign-in form. A real form element, so Enter submits and a password
-   * manager recognises it. */
-  _buildSignin() {
-    const t = this._config.text;
-    const panel = el('form', 'signin');
-    panel.appendChild(el('div', 'ttl', t.sign_in_title));
-    panel.appendChild(el('div', 'sub', t.sign_in_hint));
-    const emailLabel = el('label', '', t.email);
-    const email = el('input', '');
-    email.type = 'email';
-    email.autocomplete = 'username';
-    email.setAttribute('autocomplete', 'username');
-    emailLabel.appendChild(email);
-    panel.appendChild(emailLabel);
-    /* The country picks the region and its servers, as in the Aqara app. */
-    const countryLabel = el('label', '', t.country);
-    const country = el('select', '');
-    const hubAttrs = (this._hub && this._hub.attributes) || {};
-    const countries = hubAttrs.countries || [];
-    const chosen = defaultCountry(hubAttrs.country, countries.map(([code]) => code),
-      (typeof navigator !== 'undefined' && navigator.languages) || []);
-    const none = el('option', '', t.choose_country);
-    none.value = '';
-    none.disabled = true;
-    country.appendChild(none);
-    /* In the card's language, and in its alphabetical order. */
-    countries.map(([code, name]) => [code, countryName(code, name, this._lang)])
-      .sort((a, b) => a[1].localeCompare(b[1], this._lang || undefined))
-      .forEach(([code, name]) => {
-        const opt = el('option', '', name);
-        opt.value = code;
-        country.appendChild(opt);
-      });
-    country.value = chosen;
-    countryLabel.appendChild(country);
-    panel.appendChild(countryLabel);
-    this._country = country;
-    const pwLabel = el('label', '', t.password);
-    const password = el('input', '');
-    password.type = 'password';
-    password.setAttribute('autocomplete', 'current-password');
-    pwLabel.appendChild(password);
-    panel.appendChild(pwLabel);
-    const btns = el('div', 'btns');
-    const submit = el('button', 'primary', t.sign_in);
-    submit.type = 'submit';
-    /* Signing in needs the country, because it picks the servers. */
-    const ready = () => { submit.disabled = !country.value; };
-    country.addEventListener('change', ready);
-    ready();
-    btns.appendChild(submit);
-    const cancel = el('button', '', t.cancel);
-    cancel.type = 'button';
-    cancel.addEventListener('click', () => {
-      this._changingLogin = false;
-      this._update();
-    });
-    btns.appendChild(cancel);
-    panel.appendChild(btns);
-    panel.addEventListener('submit', (ev) => {
-      ev.preventDefault();
-      this._submitLogin(email.value, password.value);
-      /* Cleared at once: the field is the only place the clear password
-       * ever was. */
-      password.value = '';
-    });
-    return { panel, email, password, submit, cancel };
-  }
-
-  _submitLogin(account, password) {
-    if (!account.trim() || !password) return;
-    if (!this._country || !this._country.value) return;
-    let blob;
-    try {
-      blob = encryptPassword(password);
-    } catch (err) {
-      return;
-    }
-    this._command('login', { account: account.trim(), password_rsa: blob,
-      country: this._country.value }, false);
-    this._changingLogin = false;
-    this._sentText = this._config.text.signing_in;
-    this._sentAt = Date.now();
-    this._update();
   }
 
   /* One setting: a name, a hint and a segmented control built from the
@@ -1835,15 +1588,9 @@ class Fp2CompanionCard extends HTMLElement {
      * out. An app too old to publish the flag is judged by the status. */
     const signedIn = typeof sa.signed_in === 'boolean'
       ? sa.signed_in && code !== 'no_session' : code !== 'no_session';
-    if (!signedIn) this._changingLogin = false;
     r.main.hidden = !signedIn;
-    const formHome = signedIn ? r.panes.account : r.signinSlot;
-    if (r.signin.panel.parentNode !== formHome) formHome.appendChild(r.signin.panel);
-    r.who.textContent = sa.account ? tpl(t.signed_in_as, { account: sa.account }) : t.signed_in;
-    r.change.className = this._changingLogin ? 'on' : '';
-    r.signin.panel.hidden = signedIn && !this._changingLogin;
-    r.signin.cancel.hidden = !signedIn;
-    if (r.signin.panel.hidden) r.signin.password.value = '';
+    r.who.textContent = !signedIn ? t.signed_out
+      : (sa.account ? tpl(t.signed_in_as, { account: sa.account }) : t.signed_in);
     r.refresh.hidden = !signedIn;
 
     this._updateSetting('sensitivity', r.sensitivity);

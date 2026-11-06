@@ -21,8 +21,8 @@ commands to the integration through Home Assistant's websocket.
   [its README](https://github.com/sfortis/fp2-companion#requirements). Card
   1.20.x is the last version for the old AppDaemon app.
 - HACS, which installs the card and adds its dashboard resource.
-- An **admin** Home Assistant user to edit zones, restore backups, sign in
-  and see the live view. Any user can read the card and change the settings
+- An **admin** Home Assistant user to edit zones, restore backups and see
+  the live view. Any user can read the card and change the settings
   that are entities.
 
 <p align="center">
@@ -106,10 +106,13 @@ not green.
 
 The live view runs only while the card's map is on screen, and stops when
 the card is scrolled away or the screen goes off. The zone editor, the
-restore of a backup, the sign-in and the live view need an **admin** Home
-Assistant user, because the integration accepts those commands from admins
-only. The settings that are entities, such as sensitivity, work for any
-user.
+restore of a backup and the live view need an **admin** Home Assistant user,
+because the integration accepts those commands from admins only. The
+settings that are entities, such as sensitivity, work for any user.
+
+The card does not sign in. The integration asks for the Aqara account when
+it is added, and Home Assistant asks again when Aqara ends the session. The
+Account tab shows the account and where to change it.
 
 ## Translations
 

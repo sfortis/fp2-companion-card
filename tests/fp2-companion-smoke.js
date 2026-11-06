@@ -23,18 +23,15 @@ Object.assign(global, {
   HTMLElement: dom.window.HTMLElement, customElements: dom.window.customElements,
   CustomEvent: dom.window.CustomEvent,
 });
-/* Node 21 and later have a global navigator whose languages name en-US,
- * which the sign-in reads for its first country. The checks expect a browser
- * that names no country, as Node 20 has no navigator at all. */
+/* Node 21 and later have a global navigator; the checks expect none, as on
+ * Node 20, so they do not depend on the machine's language. */
 Object.defineProperty(global, 'navigator', { value: undefined, configurable: true });
 const SOURCE = fs.readFileSync(CARD, 'utf8');
-/* The crypto helpers are top-level functions of the card, so evaluating the
- * same source once more with a return statement hands them to the test. */
-const { md5Hex, rsaPkcs1v15, encryptPassword, defaultCountry, shutOff, DEFAULTS, TRANSLATIONS,
-  cardLanguage, cardText } = new Function(
+/* The helpers are top-level functions of the card, so evaluating the same
+ * source once more with a return statement hands them to the test. */
+const { shutOff, DEFAULTS, TRANSLATIONS, cardLanguage, cardText } = new Function(
   `${SOURCE.replace("customElements.define('fp2-companion-card', Fp2CompanionCard);", '')}`
-  + '\nreturn { md5Hex, rsaPkcs1v15, encryptPassword, defaultCountry, shutOff, DEFAULTS,'
-  + ' TRANSLATIONS, cardLanguage, cardText };')();
+  + '\nreturn { shutOff, DEFAULTS, TRANSLATIONS, cardLanguage, cardText };')();
 new Function(SOURCE)();
 const Card = customElements.get('fp2-companion-card');
 
@@ -925,57 +922,26 @@ async function previewChecks() {
   ok(root.querySelector('svg.map') === before, 'the map is not rebuilt for nothing');
 }
 
-/* ---------- signing in ---------- */
+/* ---------- the account ---------- */
 {
   const { root } = mount();
-  ok(root.querySelector('form.signin').hidden, 'signed in, the form is hidden');
-  ok(!root.querySelector('.account').hidden, 'signed in, the account row shows');
+  ok(!root.querySelector('form'), 'the card has no sign-in form: the integration signs in');
   ok(root.querySelector('.account .who').textContent.includes('j.w*****@example.com'),
-    'the account is shown as the app masked it');
+    'the account is shown as the integration masked it');
+  ok(root.querySelector('.account').textContent.includes('Reconfigure'),
+    'and the card says where to change it');
+  ok(!root.querySelector('.account button'), 'with no button of its own');
 }
 
 {
   const st = states({ [E.status]: { state: 'no_session', attributes: {
-    message: 'Not signed in to Aqara. Sign in on the card.' } } });
-  const { root, calls } = mount(st);
-  const form = root.querySelector('form.signin');
-  ok(!form.hidden, 'without a session the form shows');
+    message: 'Not signed in to Aqara. Sign in from the integration in Settings, '
+      + 'Devices & services.' } } });
+  const { root } = mount(st);
   ok([...root.querySelectorAll('.body > div')].some((d) => d.hidden && d.querySelector('.setting')),
     'without a session the settings are hidden');
-  ok([...form.querySelectorAll('button')].find((b) => b.textContent === 'Cancel').hidden,
-    'a first sign-in has no Cancel');
-  const [email, password] = form.querySelectorAll('input');
-  eq(password.type, 'password', 'the password field masks');
-  email.value = 'new.user@example.com';
-  password.value = 'correct horse';
-  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-  const pub = lastCommand(calls);
-  eq(pub.type, 'fp2_companion/login', 'the form sends login');
-  ok(!('device' in pub), 'to the app, not to a device');
-  const body = pub;
-  eq(body.account, 'new.user@example.com', 'with the account');
-  eq(Buffer.from(body.password_rsa, 'base64').length, 128, 'and a 1024-bit RSA block');
-  ok(!JSON.stringify(pub).includes('correct horse'), 'never the clear password');
-  eq(password.value, '', 'the password field is cleared at once');
-  ok(root.querySelector('.message').textContent.includes('Signing in'),
-    'the card says it is signing in');
-}
-
-{
-  const { root, calls } = mount();
-  const change = [...root.querySelectorAll('.account button')].find((b) => b.textContent === 'Change login');
-  change.click();
-  const form = root.querySelector('form.signin');
-  ok(!form.hidden, 'Change login opens the form');
-  ok(form.closest('.pane') === root.querySelectorAll('.pane')[3], 'on the Account pane');
-  [...form.querySelectorAll('button')].find((b) => b.textContent === 'Cancel').click();
-  ok(form.hidden, 'Cancel closes it again');
-  const out = [...root.querySelectorAll('.account button')].find((b) => b.textContent === 'Log out');
-  const before = calls.length;
-  out.click();
-  eq(calls.length, before, 'one press on Log out sends nothing');
-  out.click();
-  eq(lastCommand(calls).type, 'fp2_companion/logout', 'the second press logs out');
+  ok(root.querySelector('.message').textContent.includes('Devices & services'),
+    'and the message says where to sign in');
 }
 
 {
@@ -983,8 +949,8 @@ async function previewChecks() {
   const st = states({ [E.status]: { state: 'ok', attributes: {
     signed_in: true, account: null } } });
   const { root } = mount(st);
-  ok(root.querySelector('form.signin').hidden, 'a token without an account is signed in');
-  eq(root.querySelector('.account .who').textContent, 'Signed in', 'and says so plainly');
+  eq(root.querySelector('.account .who').textContent, 'Signed in',
+    'a token without an account is signed in, and says so plainly');
 }
 
 /* ---------- keyboard and screen readers ---------- */
@@ -1110,22 +1076,6 @@ async function previewChecks() {
   ok(!pinned.shadowRoot.querySelector('.err'), 'and shows its device');
 }
 
-{
-  const st = states({ [E.status]: { state: 'no_session', attributes: {} } });
-  const { root, calls } = mount(st);
-  const form = root.querySelector('form.signin');
-  const country = form.querySelector('select');
-  eq(country.value, 'GR', 'the country starts at the session country');
-  country.value = 'US';
-  const [email, password] = form.querySelectorAll('input');
-  email.value = 'a@example.com';
-  password.value = 'pw';
-  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-  const pub = lastCommand(calls);
-  eq(pub.type, 'fp2_companion/login', 'a sign-in goes to the app');
-  eq(pub.country, 'US', 'with the chosen country');
-}
-
 /* ---------- a command the integration refuses ---------- */
 async function refusalChecks() {
   const card = new Card();
@@ -1134,43 +1084,12 @@ async function refusalChecks() {
     callWS: () => Promise.reject({ code: 'unauthorized', message: 'Unauthorized' }) };
   document.body.appendChild(card);
   const root = card.shadowRoot;
-  const out = [...root.querySelectorAll('.account button')].find((b) => b.textContent === 'Log out');
-  out.click();
-  out.click();
+  card._command('zone/delete', { range_id: 3 });
   await Promise.resolve();
   await Promise.resolve();
   eq(root.querySelector('.message').textContent, 'Only an admin user can change this.',
     'a user who is not an admin is told why a command did nothing');
   card.remove();
-}
-
-/* ---------- the country to offer first ---------- */
-{
-  const codes = ['DE', 'GR', 'US'];
-  eq(defaultCountry('US', codes, ['el-GR']), 'US', 'the session country comes first');
-  eq(defaultCountry(null, codes, ['el-GR', 'en-US']), 'GR', 'then the browser language');
-  eq(defaultCountry(null, codes, ['en', 'de-de']), 'DE', 'the first language that names a country');
-  eq(defaultCountry(null, codes, ['en', 'fr-FR']), '', 'and no guess when none is on the list');
-
-  /* No session country and a browser that names none: the person chooses. */
-  const st = states({ [E.status]: { state: 'no_session', attributes: {} },
-    [E.hub]: { ...hub(), attributes: { ...hub().attributes, country: null } } });
-  const { root, calls } = mount(st);
-  const form = root.querySelector('form.signin');
-  const country = form.querySelector('select');
-  const submit = form.querySelector('button[type=submit]');
-  ok(!form.closest('.pane') && !form.hidden, 'signed out, the form stands in place of the tabs');
-  eq(country.value, '', 'jsdom names no country, so none is chosen');
-  eq(country.options[0].textContent, 'Choose your country', 'the list asks for one');
-  ok(submit.disabled, 'and Sign in waits for it');
-  const [email, password] = form.querySelectorAll('input');
-  email.value = 'a@example.com';
-  password.value = 'pw';
-  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-  ok(!lastCommand(calls), 'a sign-in without a country sends nothing');
-  country.value = 'GR';
-  ev(country, 'change');
-  ok(!submit.disabled, 'a chosen country enables Sign in');
 }
 
 /* ---------- review fixes ---------- */
@@ -1205,37 +1124,6 @@ async function refusalChecks() {
   pinned.hass = { states: st, callService: (d, sv, data) => calls.push(data) };
   pinned.shadowRoot.querySelector('.foot button').click();
   eq(calls[calls.length - 1].entity_id, E.refresh, 'an edited config takes effect at once');
-}
-
-/* ---------- the browser crypto against Python and Node ---------- */
-{
-  const nodeCrypto = require('crypto');
-  ['', 'a', 'abc', 'correct horse battery staple', 'Καλημέρα κόσμε', 'x'.repeat(1000)]
-    .forEach((text) => eq(md5Hex(text),
-      nodeCrypto.createHash('md5').update(text, 'utf8').digest('hex'),
-      `md5 of ${JSON.stringify(text.slice(0, 12))}`));
-
-  /* A throwaway key pair: the card encrypts with its public half, Python's
-   * cryptography decrypts with the private half and must get the MD5 back. */
-  const { publicKey, privateKey } = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 1024 });
-  const jwk = publicKey.export({ format: 'jwk' });
-  const big = (b64u) => BigInt(`0x${Buffer.from(b64u, 'base64url').toString('hex')}`);
-  const md5 = md5Hex('pässwörd');
-  const blob = rsaPkcs1v15(md5, big(jwk.n), big(jwk.e));
-  const { execFileSync } = require('child_process');
-  const pem = privateKey.export({ format: 'pem', type: 'pkcs8' });
-  const out = execFileSync('python3', ['-c', `
-import base64, sys
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import padding
-key = serialization.load_pem_private_key(sys.argv[1].encode(), None)
-print(key.decrypt(base64.b64decode(sys.argv[2]), padding.PKCS1v15()).decode())
-`, pem, blob]).toString().trim();
-  eq(out, md5, 'Python decrypts the browser block to the MD5');
-  const again = rsaPkcs1v15(md5, big(jwk.n), big(jwk.e));
-  ok(again !== blob, 'the padding is random, so two blocks differ');
-  eq(Buffer.from(encryptPassword('x'), 'base64').length, 128,
-    'the Aqara key gives a 128-byte block');
 }
 
 /* ---------- the FP2 on the map ---------- */
