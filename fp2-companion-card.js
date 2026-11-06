@@ -759,7 +759,6 @@ function shortTime(epochSeconds) {
 const ENTITY_SUFFIX = {
   status: ['sensor', 'cloud_status'],
   zones: ['sensor', 'zones'],
-  preview: ['sensor', 'backup_preview'],
   sensitivity: ['select', 'sensitivity'],
   approach: ['select', 'approach_distance'],
   refresh: ['button', 'refresh'],
@@ -2528,10 +2527,11 @@ class Fp2CompanionCard extends HTMLElement {
 
   /* ---------- backups ---------- */
 
+  /* The backup on show, as the integration sent it back; null while it
+   * loads. */
   _previewZones() {
     if (this._preview === null) return null;
-    const st = this._state('preview');
-    const a = st && st.attributes;
+    const a = this._previewData;
     return a && a.name === this._preview ? a : null;
   }
 
@@ -2540,11 +2540,38 @@ class Fp2CompanionCard extends HTMLElement {
     this._pane = 'zones';
     this._showPane();
     this._preview = name;
+    this._previewData = null;
     this._edit = null;
-    this._command('backup/preview', { name });
+    this._loadPreview(name);
     this._zonesKey = null;
     this._backupsKey = null;
     this._update();
+  }
+
+  /* A backup's zones come back as the answer to the command; nothing is
+   * kept on an entity. A refusal closes the preview and says why. */
+  _loadPreview(name) {
+    if (!this._hass || !this._hass.callWS) return;
+    Promise.resolve(this._hass.callWS({ type: 'fp2_companion/backup/preview',
+      device: this._device.key, name }))
+      .then((backup) => {
+        if (this._preview !== name || !backup) return;
+        this._previewData = backup;
+        this._zonesKey = null;
+        this._backupsKey = null;
+        this._update();
+      })
+      .catch((err) => {
+        if (this._preview !== name) return;
+        this._preview = null;
+        this._sentText = (err && err.code === 'unauthorized')
+          ? this._config.text.needs_admin
+          : `${this._config.text.command_failed} ${(err && err.message) || ''}`.trim();
+        this._sentAt = Date.now();
+        this._zonesKey = null;
+        this._backupsKey = null;
+        this._update();
+      });
   }
 
   _closePreview() {

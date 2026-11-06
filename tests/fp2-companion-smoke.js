@@ -42,7 +42,7 @@ const P = 'presence_sensor_fp2_b2c3';
 const E = {
   status: `sensor.${P}_cloud_status`, zones: `sensor.${P}_zones`,
   sensitivity: `select.${P}_sensitivity`, approach: `select.${P}_approach_distance`,
-  refresh: `button.${P}_refresh`, preview: `sensor.${P}_backup_preview`,
+  refresh: `button.${P}_refresh`,
   ai: `switch.${P}_ai_detection`, learning: `button.${P}_ai_learning`,
   hub: 'sensor.fp2_companion_devices',
 };
@@ -847,9 +847,21 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
 }
 
 /* ---------- previewing and restoring a backup ---------- */
-{
-  const st = states();
-  const { root, calls, card } = mount(st);
+async function previewChecks() {
+  const card = new Card();
+  card.setConfig({ type: 'custom:fp2-companion-card' });
+  const calls = [];
+  const backup = { name: 'zones-20261030T090122.json', saved_at: 1793343682,
+    reason: 'first-read', zones: ZONES.slice(0, 1) };
+  let answer;
+  card.hass = { states: states(), callService: (d, s, data) => calls.push({ d, s, data }),
+    callWS: (msg) => {
+      calls.push({ d: 'ws', s: msg.type, data: msg });
+      if (msg.type !== 'fp2_companion/backup/preview') return Promise.resolve(null);
+      return new Promise((resolve) => { answer = resolve; });
+    } };
+  document.body.appendChild(card);
+  const root = card.shadowRoot;
   const pick = root.querySelector('.backups select');
   eq(pick.options.length, 2, 'the backups are one dropdown with a prompt');
   ok(pick.options[1].textContent.includes('First read'), 'an option says what the backup is');
@@ -861,11 +873,11 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   ok(root.querySelector('.banner').textContent.includes('Loading'),
     'the card waits for the preview');
 
-  const withPreview = states({ [E.preview]: { state: 'zones-20261030T090122.json',
-    attributes: { name: 'zones-20261030T090122.json', saved_at: 1793343682,
-      reason: 'first-read', zones: ZONES.slice(0, 1) } } });
-  card.hass = { states: withPreview, callService: (d, s, data) => calls.push({ d, s, data }), callWS: ws(calls) };
-  eq(root.querySelectorAll('svg.map rect.cell').length, 15, 'the map shows the backup');
+  answer(backup);
+  await Promise.resolve();
+  await Promise.resolve();
+  eq(root.querySelectorAll('svg.map rect.cell').length, 15,
+    'the map shows the backup the command sent back');
   const restore = [...root.querySelectorAll('.banner button')].find((b) => b.textContent === 'Restore');
   const before = calls.length;
   restore.click();
@@ -875,6 +887,7 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   eq(r.type, 'fp2_companion/backup/restore', 'the second press restores');
   eq(r.name, 'zones-20261030T090122.json', 'the backup that was shown');
   ok(root.querySelector('.banner').hidden, 'the preview closes after a restore');
+  card.remove();
 }
 
 /* ---------- statuses ---------- */
@@ -1441,7 +1454,7 @@ async function viewChecks() {
   delete global.IntersectionObserver;
 }
 
-liveChecks().then(viewChecks).then(refusalChecks).then(() => {
+liveChecks().then(viewChecks).then(refusalChecks).then(previewChecks).then(() => {
   /* Every card left attached holds a renewal timer. */
   document.body.innerHTML = '';
   console.log(`${checks - failures}/${checks} checks passed`);
