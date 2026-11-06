@@ -42,7 +42,7 @@
  * where to sign in.
  */
 
-const CARD_VERSION = '1.20.1';
+const CARD_VERSION = '2.0.0';
 
 /* A radar fan. Decorative only: it never changes with state. */
 const RADAR_ICON = `
