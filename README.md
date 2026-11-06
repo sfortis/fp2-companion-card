@@ -19,7 +19,9 @@ commands to the integration through Home Assistant's websocket.
   integration, version 2.0.0 or later, installed and signed in to Aqara. The
   card does nothing without it. Its own requirements are listed in
   [its README](https://github.com/sfortis/fp2-companion#requirements). Card
-  1.20.x is the last version for the old AppDaemon app.
+  1.20.x is the last version for the old AppDaemon app. Without the
+  integration, the card shows only a message that links to
+  [the guide for the move](https://github.com/sfortis/fp2-companion#moving-from-version-14x).
 - HACS, which installs the card and adds its dashboard resource.
 - An **admin** Home Assistant user to edit zones, restore backups and see
   the live view. Any user can read the card and change the settings
@@ -34,8 +36,9 @@ commands to the integration through Home Assistant's websocket.
 
 ## Installation
 
-1. Install and set up the [FP2 Companion](https://github.com/sfortis/fp2-companion)
-   app.
+1. Install and set up the
+   [Aqara FP2 Companion](https://github.com/sfortis/fp2-companion)
+   integration.
 2. In HACS, search for **FP2 Companion Card** and download it. If the
    search does not find it yet, add
    `https://github.com/sfortis/fp2-companion-card` as a custom repository of
@@ -76,7 +79,7 @@ working.
 |---|---|---|
 | `title` | `Presence sensor` | The card's title |
 | `device` | none | Pins the card to one FP2, by its serial, entity prefix, device id or name, and hides the device picker |
-| `devices_entity` | `sensor.fp2_companion_devices` | The app's own sensor |
+| `devices_entity` | `sensor.fp2_companion_devices` | The integration's own sensor |
 | `entities` | `{}` | Overrides for entity ids renamed in the registry, on a pinned card |
 | `language` | the user's | The card's language, like `it`. Empty follows the Home Assistant user's language; English and Italian ship with the card |
 | `text` | per language | Any word on the card, over the language's own |
@@ -99,7 +102,7 @@ The card has four tabs.
 - **Account** shows the Aqara account, until when the session is valid,
   and where to change the account.
 
-The cloud icon at the top shows the app's status: green with a check when
+The cloud icon at the top shows the integration's status: green with a check when
 all is well, amber with an exclamation mark for a warning, and red with a
 cross when there is no session. The line under it explains anything that is
 not green.

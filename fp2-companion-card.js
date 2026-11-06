@@ -43,6 +43,8 @@
  */
 
 const CARD_VERSION = '2.0.0';
+/* Where the README of the integration explains the move from the AppDaemon app. */
+const MOVE_GUIDE_URL = 'https://github.com/sfortis/fp2-companion#moving-from-version-14x';
 
 /* A radar fan. Decorative only: it never changes with state. */
 const RADAR_ICON = `
@@ -86,12 +88,15 @@ const DEFAULTS = {
   /* Every word on screen comes from here, in English. TRANSLATIONS holds the
    * other languages, and words set here in the card config win over both. */
   text: {
-    no_hub: 'No {entity}. Is the fp2_companion app running?',
-    no_devices: 'The fp2_companion app has found no FP2 yet. An FP2 that is not '
-      + 'paired over HomeKit is listed by its serial under devices: in fp2_companion.yaml.',
-    no_status: 'No {entity}. The app serves this FP2, so its entities may have '
+    needs_integration: 'This card needs the Aqara FP2 Companion integration, version '
+      + '2.0.0 or later. The AppDaemon app of versions up to 1.4.1 no longer works with it.',
+    how_to_move: 'How to move to the integration',
+    no_hub: 'No {entity}. Is the Aqara FP2 Companion integration set up?',
+    no_devices: 'The integration has found no FP2 yet. An FP2 that is not paired over '
+      + "HomeKit can be added by its serial in the integration's Configure options.",
+    no_status: 'No {entity}. The integration serves this FP2, so its entities may have '
       + 'other ids: name them under entities: on a card pinned with device:.',
-    device_missing: 'The FP2 {device} is not among the devices the app serves.',
+    device_missing: 'The FP2 {device} is not among the devices the integration serves.',
     editor: {
       title: 'Title',
       device: 'FP2',
@@ -215,12 +220,15 @@ const DEFAULTS = {
  * may not hold a key DEFAULTS.text lacks (the smoke test checks it). */
 const TRANSLATIONS = {
   it: {
-    no_hub: "{entity} non c'è. L'app fp2_companion è in esecuzione?",
-    no_devices: "L'app fp2_companion non ha ancora trovato nessun FP2. Un FP2 non "
-      + 'associato via HomeKit va indicato col suo seriale sotto devices: in fp2_companion.yaml.',
-    no_status: "{entity} non c'è. L'app gestisce questo FP2, quindi le sue entità potrebbero "
-      + 'avere altri id: indicale sotto entities: in una card fissata con device:.',
-    device_missing: "L'FP2 {device} non è tra i dispositivi gestiti dall'app.",
+    needs_integration: "Questa card richiede l'integrazione Aqara FP2 Companion, versione "
+      + "2.0.0 o successiva. L'app AppDaemon delle versioni fino alla 1.4.1 non funziona più con essa.",
+    how_to_move: "Come passare all'integrazione",
+    no_hub: "{entity} non c'è. L'integrazione Aqara FP2 Companion è configurata?",
+    no_devices: "L'integrazione non ha ancora trovato nessun FP2. Un FP2 non associato via "
+      + "HomeKit si aggiunge col suo seriale nelle opzioni Configura dell'integrazione.",
+    no_status: "{entity} non c'è. L'integrazione gestisce questo FP2, quindi le sue entità "
+      + 'potrebbero avere altri id: indicale sotto entities: in una card fissata con device:.',
+    device_missing: "L'FP2 {device} non è tra i dispositivi gestiti dall'integrazione.",
     editor: {
       title: 'Titolo',
       device: 'FP2',
@@ -625,6 +633,7 @@ button.arm { background: var(--error-color, #f44336);
 .account .sub { font-size: 11px; margin-top: 8px; }
 .foot button { padding: 7px 14px; font-size: 13px; }
 .err { padding: 16px; color: var(--error-color, #f44336); font-size: 13px; }
+.err a { color: var(--primary-color, #03a9f4); }
 `;
 
 /* ---------- helpers ---------- */
@@ -956,6 +965,16 @@ class Fp2CompanionCard extends HTMLElement {
       this._refs = null;
     }
     const cfg = this._config;
+    /* Home Assistant lists the integrations it has loaded. Without this one
+     * every command fails, so the card says what it needs instead. The old
+     * AppDaemon app still makes the same entities, so their presence proves
+     * nothing. */
+    const loaded = hass && hass.config && hass.config.components;
+    if (Array.isArray(loaded) && !loaded.includes('fp2_companion')) {
+      this._renderError(cfg.text.needs_integration,
+        { href: MOVE_GUIDE_URL, text: cfg.text.how_to_move });
+      return;
+    }
     const hub = hass && hass.states && hass.states[cfg.devices_entity];
     const devices = (hub && hub.attributes && hub.attributes.devices) || [];
     /* No hub means no app, while a hub with no device is an app that is
@@ -1063,12 +1082,25 @@ class Fp2CompanionCard extends HTMLElement {
     }
   }
 
-  _renderError(message) {
+  /* set hass runs on every state change in the house, so an error already
+   * on screen is left as it is, and its link stays clickable. */
+  _renderError(message, link = null) {
+    const key = link ? `${message}\n${link.href}` : message;
+    if (!this._refs && this._errorShown === key) return;
     this.shadowRoot.innerHTML = `<style>${STYLE}</style>`;
     const card = document.createElement('ha-card');
-    card.appendChild(el('div', 'err', message));
+    const box = el('div', 'err', message);
+    if (link) {
+      const a = el('a', null, link.text);
+      a.href = link.href;
+      a.target = '_blank';
+      a.rel = 'noreferrer';
+      box.append(document.createElement('br'), a);
+    }
+    card.appendChild(box);
     this.shadowRoot.appendChild(card);
     this._refs = null;
+    this._errorShown = key;
   }
 
   _moreInfo(entityId) {
@@ -1280,6 +1312,7 @@ class Fp2CompanionCard extends HTMLElement {
   /* ---------- build ---------- */
 
   _build() {
+    this._errorShown = null;
     this.shadowRoot.innerHTML = `<style>${STYLE}</style>`;
     const card = document.createElement('ha-card');
     const body = el('div', 'body');

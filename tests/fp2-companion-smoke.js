@@ -256,8 +256,31 @@ document.body.innerHTML = '';
 {
   const { root } = mount({ [E.hub]: hub([]) });
   const err = root.querySelector('.err');
-  ok(err && err.textContent.includes('devices:') && !err.textContent.includes('running'),
-    'an app with no FP2 yet points to the yaml, not to a stopped app');
+  ok(err && err.textContent.includes('Configure') && !err.textContent.includes('set up?'),
+    'an integration with no FP2 yet points to its options, not to a missing setup');
+}
+
+/* Home Assistant without the integration: the old AppDaemon app makes the
+ * same entities, but every command would fail, so the card says what it needs. */
+{
+  const card = new Card();
+  card.setConfig({ type: 'custom:fp2-companion-card' });
+  card.hass = { states: states(), config: { components: ['mqtt', 'homekit_controller'] } };
+  const err = card.shadowRoot.querySelector('.err');
+  const link = err && err.querySelector('a');
+  ok(err && err.textContent.includes('2.0.0') && !card.shadowRoot.querySelector('.panetabs'),
+    'without the integration the card shows only what it needs');
+  ok(link && link.href.endsWith('#moving-from-version-14x') && link.target === '_blank',
+    'and links to the guide for the move');
+  card.hass = { states: states(), config: { components: ['mqtt', 'homekit_controller'] } };
+  ok(card.shadowRoot.querySelector('.err a') === link,
+    'another state change leaves the message, and its link, in place');
+  card.hass = { states: states(), config: { components: ['fp2_companion'] } };
+  ok(!card.shadowRoot.querySelector('.err') && card.shadowRoot.querySelector('.panetabs'),
+    'once the integration is loaded the card is built');
+  card.hass = { states: states(), config: { components: ['mqtt'] } };
+  ok(card.shadowRoot.querySelector('.err a'),
+    'and an integration that goes away brings the message back');
 }
 
 /* ---------- entities under an earlier prefix ---------- */
