@@ -940,8 +940,9 @@ async function previewChecks() {
   const { root } = mount(st);
   ok([...root.querySelectorAll('.body > div')].some((d) => d.hidden && d.querySelector('.setting')),
     'without a session the settings are hidden');
-  ok(root.querySelector('.message').textContent.includes('Devices & services'),
-    'and the message says where to sign in');
+  eq(root.querySelector('.message').textContent,
+    'Not signed in to Aqara. Sign in from Settings, Devices & services, Aqara FP2 Companion.',
+    'and the card says in its own words where to sign in');
 }
 
 {

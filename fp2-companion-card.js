@@ -67,8 +67,7 @@ const PANES = ['zones', 'settings', 'backups', 'account'];
 const DEFAULTS = {
   title: 'Presence sensor',
 
-  /* The app's own sensor: the devices it serves, the countries for the
-   * sign-in and the session. */
+  /* The integration's own sensor: the devices it serves and the session. */
   devices_entity: 'sensor.fp2_companion_devices',
 
   /* Pins the card to one FP2, by its key (the serial in lower case), its
@@ -182,6 +181,8 @@ const DEFAULTS = {
     signed_in_as: 'Signed in as {account}',
     signed_in: 'Signed in',
     signed_out: 'Not signed in',
+    sign_in_where: 'Not signed in to Aqara. Sign in from Settings, Devices & services, '
+      + 'Aqara FP2 Companion.',
     account_hint: 'To sign in again or change the account, open Settings, '
       + 'Devices & services, Aqara FP2 Companion, and choose Reconfigure.',
     /* One per status code the app publishes. The card decides on the code and
@@ -310,6 +311,8 @@ const TRANSLATIONS = {
     signed_in_as: 'Accesso come {account}',
     signed_in: 'Accesso effettuato',
     signed_out: 'Accesso non effettuato',
+    sign_in_where: 'Accesso ad Aqara non effettuato. Accedi da Impostazioni, '
+      + 'Dispositivi e servizi, Aqara FP2 Companion.',
     account_hint: 'Per accedere di nuovo o cambiare account, apri Impostazioni, '
       + 'Dispositivi e servizi, Aqara FP2 Companion, e scegli Riconfigura.',
     status: {
@@ -619,8 +622,7 @@ button.arm { background: var(--error-color, #f44336);
 .account .who { font-size: 13px; color: var(--primary-text-color); overflow: hidden;
                 text-overflow: ellipsis; white-space: nowrap; }
 .account .sess { font-size: 11px; margin-top: 2px; }
-.account .abtns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.account button { padding: 5px 12px; font-size: 12px; }
+.account .sub { font-size: 11px; margin-top: 8px; }
 .foot button { padding: 7px 14px; font-size: 13px; }
 .err { padding: 16px; color: var(--error-color, #f44336); font-size: 13px; }
 `;
@@ -1570,7 +1572,10 @@ class Fp2CompanionCard extends HTMLElement {
     r.cloudMark.setAttribute('d', CLOUD_MARK[level] || CLOUD_MARK.warn);
     /* The app's own sentence is shown, never parsed: it explains the code. A
      * refusal adds the reason the app gave, for the same purpose. */
-    let message = code === 'ok' ? '' : (sa.message || '');
+    /* Without a session the card says itself, in its language, where to
+     * sign in; any other code shows the integration's own sentence. */
+    let message = code === 'ok' ? ''
+      : (code === 'no_session' ? t.sign_in_where : (sa.message || ''));
     if (code === 'refused' && sa.detail && sa.detail.reason) {
       message = `${message} ${sa.detail.reason}`.trim();
     }

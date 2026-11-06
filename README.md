@@ -97,7 +97,7 @@ The card has four tabs.
 - **Backups** lists the zone backups. Choosing one previews it on the map,
   and **Restore** needs a second press.
 - **Account** shows the Aqara account, until when the session is valid,
-  **Change login** and **Log out**, which needs a second press.
+  and where to change the account.
 
 The cloud icon at the top shows the app's status: green with a check when
 all is well, amber with an exclamation mark for a warning, and red with a
