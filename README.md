@@ -8,20 +8,22 @@ editor with backups, and the live targets on the zone map, the way the Aqara
 app shows them.
 
 The card is the front end of the
-[FP2 Companion](https://github.com/sfortis/fp2-companion) AppDaemon app,
-which does the work. The app talks to the Aqara cloud, creates the entities
-and keeps the backups, and the card shows them and sends its commands to the
-app over MQTT.
+[Aqara FP2 Companion](https://github.com/sfortis/fp2-companion) integration,
+which does the work. The integration talks to the Aqara cloud, creates the
+entities and keeps the backups, and the card shows them and sends its
+commands to the integration through Home Assistant's websocket.
 
 ## Requirements
 
-- The [FP2 Companion](https://github.com/sfortis/fp2-companion) app,
-  installed and signed in to Aqara. The card does nothing without it. The
-  app's own requirements are listed in
-  [its README](https://github.com/sfortis/fp2-companion#requirements).
+- The [Aqara FP2 Companion](https://github.com/sfortis/fp2-companion)
+  integration, version 2.0.0 or later, installed and signed in to Aqara. The
+  card does nothing without it. Its own requirements are listed in
+  [its README](https://github.com/sfortis/fp2-companion#requirements). Card
+  1.20.x is the last version for the old AppDaemon app.
 - HACS, which installs the card and adds its dashboard resource.
-- An **admin** Home Assistant user for the live view. Everything else works
-  for any user.
+- An **admin** Home Assistant user to edit zones, restore backups, sign in
+  and see the live view. Any user can read the card and change the settings
+  that are entities.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/sfortis/fp2-companion-card/main/docs/images/zones.png" width="380" alt="The Zones tab: the zone map with live targets and the zone list">
@@ -75,7 +77,6 @@ working.
 | `title` | `Presence sensor` | The card's title |
 | `device` | none | Pins the card to one FP2, by its serial, entity prefix, device id or name, and hides the device picker |
 | `devices_entity` | `sensor.fp2_companion_devices` | The app's own sensor |
-| `command_root` | `fp2companion` | The app's MQTT prefix |
 | `entities` | `{}` | Overrides for entity ids renamed in the registry, on a pinned card |
 | `language` | the user's | The card's language, like `it`. Empty follows the Home Assistant user's language; English and Italian ship with the card |
 | `text` | per language | Any word on the card, over the language's own |
@@ -104,9 +105,10 @@ cross when there is no session. The line under it explains anything that is
 not green.
 
 The live view runs only while the card's map is on screen, and stops when
-the card is scrolled away or the screen goes off. It needs an **admin**
-Home Assistant user, because it listens through Home Assistant's own MQTT
-subscription, which is open to admins only. Everything else works for any
+the card is scrolled away or the screen goes off. The zone editor, the
+restore of a backup, the sign-in and the live view need an **admin** Home
+Assistant user, because the integration accepts those commands from admins
+only. The settings that are entities, such as sensitivity, work for any
 user.
 
 ## Translations

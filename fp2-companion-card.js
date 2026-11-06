@@ -78,10 +78,6 @@ const DEFAULTS = {
    * entity prefix, its device id or its name. Empty shows the dropdown. */
   device: null,
 
-  /* The app's command topics: `<root>/<key>/cmd/...` for one device and
-   * `<root>/cmd/...` for the app itself (sign-in and sign-out). */
-  command_root: 'fp2companion',
-
   /* Overrides for one entity id each, for a registry rename; the rest
    * follow from the device prefix. */
   entities: {},
@@ -192,6 +188,8 @@ const DEFAULTS = {
     sign_in: 'Sign in',
     choose_country: 'Choose your country',
     signing_in: 'Signing in...',
+    needs_admin: 'Only an admin user can change this.',
+    command_failed: 'The command failed:',
     signed_in_as: 'Signed in as {account}',
     signed_in: 'Signed in',
     change_login: 'Change login',
@@ -325,6 +323,8 @@ const TRANSLATIONS = {
     sign_in: 'Accedi',
     choose_country: 'Scegli il tuo paese',
     signing_in: 'Accesso in corso...',
+    needs_admin: 'Solo un utente amministratore può modificarlo.',
+    command_failed: 'Il comando non è riuscito:',
     signed_in_as: 'Accesso come {account}',
     signed_in: 'Accesso effettuato',
     change_login: 'Cambia account',
@@ -417,13 +417,10 @@ const DEFAULT_GRID = { columns: 16, rows: 20 };
 const CELL = 10;
 /* How long an armed Delete or Restore waits for its second press. */
 const ARM_MS = 4000;
-/* A card renews its lease on the live positions this often; the app holds a
- * lease for 75 s, so one renewal can be missed. */
-const LIVE_RENEW_MS = 30000;
 /* Pushes come about every 0.75 s; this long without one greys the dots. */
 const LIVE_STALE_MS = 5000;
-/* An admin's subscription that failed (the websocket reconnecting, MQTT
- * reloading) is tried again after this long. */
+/* An admin's subscription that failed (the websocket reconnecting, the
+ * integration reloading) is tried again after this long. */
 const LIVE_RETRY_MS = 30000;
 const LIVE_DOT_R = 3.2;
 /* How long "Sent" stays up if no new zone list arrives at all. */
@@ -985,12 +982,11 @@ class Fp2CompanionCard extends HTMLElement {
     this._paint = null;      // 'add' or 'remove' while a drag is painting
     this._sentText = null;   // what the message line says while waiting
     this._changingLogin = false;
-    /* The live positions: which device this card holds a lease on, the
-     * websocket unsubscribe, the renewal timer and the last message. Every
-     * card (every browser tab) leases as its own client. */
+    /* The live positions: which device this card watches, the websocket
+     * unsubscribe and the last message. The open subscription is the card's
+     * lease, so every card (every browser tab) leases on its own. */
     this._liveKey = null;
     this._liveUnsub = null;
-    this._liveTimer = null;
     this._liveStale = null;
     this._liveMsg = null;
     this._liveAt = 0;
@@ -999,7 +995,6 @@ class Fp2CompanionCard extends HTMLElement {
     this._liveRetry = null;
     this._liveLayer = null;
     this._dots = new Map();
-    this._liveClient = Math.random().toString(36).slice(2, 12);
     this._onVisibility = () => this._liveSync();
     this._observer = null;
     this._inView = true;
@@ -1233,15 +1228,20 @@ class Fp2CompanionCard extends HTMLElement {
     return (this._hass && this._hass.states[id]) || null;
   }
 
-  /* A device command; `app` sends to the app itself (sign-in, sign-out).
-   * `device` names another device than the one on screen. */
-  _command(key, payload, app = false, device = null) {
-    if (!this._hass) return;
-    const root = this._config.command_root;
-    const dkey = device || this._device.key;
-    this._hass.callService('mqtt', 'publish', {
-      topic: app ? `${root}/cmd/${key}` : `${root}/${dkey}/cmd/${key}`,
-      payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+  /* One of the integration's websocket commands, for the device on screen
+   * unless `device` names another. They need an admin user; a refusal or any
+   * other error is shown on the message line. What a command came to shows
+   * on the device's cloud status, as before. */
+  _command(type, data = {}, device = null) {
+    if (!this._hass || !this._hass.callWS) return;
+    const msg = { type: `fp2_companion/${type}`, ...data };
+    if (device !== false) msg.device = device || this._device.key;
+    Promise.resolve(this._hass.callWS(msg)).catch((err) => {
+      this._sentText = (err && err.code === 'unauthorized')
+        ? this._config.text.needs_admin
+        : `${this._config.text.command_failed} ${(err && err.message) || ''}`.trim();
+      this._sentAt = Date.now();
+      this._update();
     });
   }
 
@@ -1288,14 +1288,13 @@ class Fp2CompanionCard extends HTMLElement {
     this._liveKey = key;
     this._liveMsg = null;
     this._liveAt = 0;
-    const topic = `${this._config.command_root}/${key}/live`;
-    /* The positions are not an entity: the app publishes them straight to the
-     * broker and the card listens through Home Assistant's own MQTT
-     * subscription, which is open to admin users only. */
+    /* The positions are not an entity: the integration sends them to the
+     * cards that subscribe, which only an admin user may do. The open
+     * subscription is the lease that keeps the FP2 streaming. */
     const conn = this._hass.connection;
     if (conn && conn.subscribeMessage) {
       conn.subscribeMessage((ev) => this._onLive(key, ev),
-        { type: 'mqtt/subscribe', topic })
+        { type: 'fp2_companion/live/subscribe', device: key })
         .then((unsub) => {
           if (this._liveKey === key) this._liveUnsub = unsub;
           else unsub();
@@ -1321,18 +1320,11 @@ class Fp2CompanionCard extends HTMLElement {
           this._drawLive();
         });
     }
-    const lease = () => this._command('track',
-      { client: this._liveClient, on: true }, false, key);
-    lease();
-    this._liveTimer = setInterval(lease, LIVE_RENEW_MS);
     this._drawLive();
   }
 
   _liveStop() {
-    const key = this._liveKey;
-    if (this._liveTimer) clearInterval(this._liveTimer);
     if (this._liveStale) clearTimeout(this._liveStale);
-    this._liveTimer = null;
     this._liveStale = null;
     if (this._liveUnsub) {
       try { this._liveUnsub(); } catch (e) { /* already closed */ }
@@ -1340,20 +1332,11 @@ class Fp2CompanionCard extends HTMLElement {
     this._liveUnsub = null;
     this._liveKey = null;
     this._liveMsg = null;
-    if (key) {
-      this._command('track', { client: this._liveClient, on: false }, false, key);
-    }
     this._drawLive();
   }
 
-  _onLive(key, ev) {
+  _onLive(key, msg) {
     if (key !== this._liveKey) return;
-    let msg;
-    try {
-      msg = JSON.parse(ev.payload);
-    } catch (e) {
-      return;
-    }
     if (!msg || typeof msg !== 'object') return;
     this._liveMsg = msg;
     this._liveAt = Date.now();
@@ -1594,7 +1577,7 @@ class Fp2CompanionCard extends HTMLElement {
     abtns.appendChild(r.change);
     abtns.appendChild(armedButton(t.log_out, t.confirm, () => {
       this._changingLogin = false;
-      this._command('logout', '', true);
+      this._command('logout', {}, false);
     }));
     r.account.appendChild(abtns);
     accountGroup.appendChild(r.account);
@@ -1695,7 +1678,7 @@ class Fp2CompanionCard extends HTMLElement {
       return;
     }
     this._command('login', { account: account.trim(), password_rsa: blob,
-      country: this._country.value }, true);
+      country: this._country.value }, false);
     this._changingLogin = false;
     this._sentText = this._config.text.signing_in;
     this._sentAt = Date.now();
@@ -2367,7 +2350,7 @@ class Fp2CompanionCard extends HTMLElement {
     btns.appendChild(el('span', 'spacer'));
     if (e.rangeId !== null && detection && from === REGION_DETECTION) {
       btns.appendChild(armedButton(t.delete, t.confirm, () => {
-        this._command('zone_delete', String(e.rangeId));
+        this._command('zone/delete', { range_id: Number(e.rangeId) });
         this._sent();
       }));
     }
@@ -2530,7 +2513,7 @@ class Fp2CompanionCard extends HTMLElement {
     }
     if (e.original && e.regionType !== e.original.regionType) payload.regionType = e.regionType;
     if (e.rangeId !== null) payload.rangeId = e.rangeId;
-    this._command('zone_set', payload);
+    this._command('zone/set', { zone: payload });
     this._sent();
   }
 
@@ -2558,7 +2541,7 @@ class Fp2CompanionCard extends HTMLElement {
     this._showPane();
     this._preview = name;
     this._edit = null;
-    this._command('preview', name);
+    this._command('backup/preview', { name });
     this._zonesKey = null;
     this._backupsKey = null;
     this._update();
@@ -2587,7 +2570,7 @@ class Fp2CompanionCard extends HTMLElement {
       `${tpl(t.preview_of, { when: shortTime(preview.saved_at) })} · ${why}`));
     const name = preview.name;
     r.banner.appendChild(armedButton(t.restore, t.confirm, () => {
-      this._command('restore', name);
+      this._command('backup/restore', { name });
       this._preview = null;
       this._backupsKey = null;
       this._sent();

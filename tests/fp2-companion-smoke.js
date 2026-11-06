@@ -106,21 +106,25 @@ function states(over = {}) {
   return s;
 }
 
-/* A live lease goes out the moment a card is attached and every 30 s after,
- * so it is kept apart from `calls`, which the press checks count. */
-function isLease(data) {
-  return Boolean(data && /\/cmd\/track$/.test(String(data.topic)));
+/* The integration's websocket commands, recorded in `calls` beside the
+ * entity actions. */
+function ws(calls) {
+  return (msg) => {
+    calls.push({ d: 'ws', s: msg.type, data: msg });
+    return Promise.resolve(null);
+  };
 }
 
+/* `leases` is the live subscriptions the card opened and closed, which are
+ * its leases on the live positions. */
 function mount(st, connection) {
   const card = new Card();
   card.setConfig({ type: 'custom:fp2-companion-card' });
   const calls = [];
-  const leases = [];
   card.hass = { states: st || states(), connection,
-    callService: (d, s, data) => (isLease(data) ? leases : calls).push({ d, s, data }) };
+    callService: (d, s, data) => calls.push({ d, s, data }), callWS: ws(calls) };
   document.body.appendChild(card);
-  return { card, calls, leases, root: card.shadowRoot };
+  return { card, calls, leases: connection ? connection.log : [], root: card.shadowRoot };
 }
 
 function segButtons(root, index) {
@@ -207,7 +211,7 @@ function mountIn(language, config = {}) {
   card.setConfig({ type: 'custom:fp2-companion-card', ...config });
   const calls = [];
   card.hass = { states: states(), locale: { language }, language,
-    callService: (d, s, data) => (isLease(data) ? null : calls.push({ d, s, data })) };
+    callService: (d, s, data) => calls.push({ d, s, data }), callWS: ws(calls) };
   document.body.appendChild(card);
   return { card, calls, root: card.shadowRoot };
 }
@@ -338,7 +342,7 @@ function rekeyed(prefix, did) {
   /* The readback arrives: pending clears. */
   const st = states({ [E.sensitivity]: { state: 'Medium',
     attributes: { options: ['Low', 'Medium', 'High'] } } });
-  card.hass = { states: st, callService: (d, s, data) => (isLease(data) ? [] : calls).push({ d, s, data }) };
+  card.hass = { states: st, callService: (d, s, data) => calls.push({ d, s, data }), callWS: ws(calls) };
   const after = segButtons(root, 0).find((b) => b.classList.contains('on'));
   ok(after.textContent === 'Medium' && !after.classList.contains('pending'),
     'pending clears when the entity reports the value');
@@ -405,8 +409,8 @@ function rekeyed(prefix, did) {
 function ev(node, type) {
   node.dispatchEvent(new dom.window.Event(type, { bubbles: true, cancelable: true }));
 }
-function lastPublish(calls) {
-  const c = calls.filter((x) => x.d === 'mqtt' && x.s === 'publish').pop();
+function lastCommand(calls) {
+  const c = calls.filter((x) => x.d === 'ws').pop();
   return c ? c.data : null;
 }
 
@@ -439,9 +443,10 @@ function lastPublish(calls) {
   ok(!hit43.classList.contains('on'), 'a tap on a draft block removes it');
 
   save.click();
-  const pub = lastPublish(calls);
-  eq(pub.topic, 'fp2companion/54ef44a1b2c3/cmd/zone_set', 'Save goes to zone_set');
-  const sent = JSON.parse(pub.payload);
+  const pub = lastCommand(calls);
+  eq(pub.type, 'fp2_companion/zone/set', 'Save goes to zone/set');
+  eq(pub.device, '54ef44a1b2c3', 'for the device on screen');
+  const sent = pub.zone;
   eq(sent.rangeId, 3, 'an edit names its rangeId');
   eq(sent.blockList.join(','), '75,107,44,76,108,45,77,109,59,91,60,92,61,93,46',
     'the read order is kept and the new block appended');
@@ -460,9 +465,9 @@ function lastPublish(calls) {
   eq(calls.length, before, 'one press on Delete sends nothing');
   eq(del.textContent, 'Press again', 'Delete asks for a second press');
   del.click();
-  const pub = lastPublish(calls);
-  eq(pub.topic, 'fp2companion/54ef44a1b2c3/cmd/zone_delete', 'the second press deletes');
-  eq(pub.payload, '3', 'the delete names the rangeId');
+  const pub = lastCommand(calls);
+  eq(pub.type, 'fp2_companion/zone/delete', 'the second press deletes');
+  eq(pub.range_id, 3, 'the delete names the rangeId');
 }
 
 {
@@ -475,7 +480,7 @@ function lastPublish(calls) {
   ev(svg.querySelector('rect.hit[data-block="1"]'), 'pointerdown');
   ev(svg, 'pointerup');
   [...root.querySelectorAll('.editor button')].find((b) => b.textContent === 'Save').click();
-  const sent = JSON.parse(lastPublish(calls).payload);
+  const sent = lastCommand(calls).zone;
   eq(sent.rangeId, 101, 'the interference zone is rewritten in place');
   ok(!('sensitivity' in sent), 'no sensitivity is sent for it');
 }
@@ -492,7 +497,7 @@ function lastPublish(calls) {
   ev(svg, 'pointerup');
   ok(!save.disabled, 'a new zone with a block can be saved');
   save.click();
-  const sent = JSON.parse(lastPublish(calls).payload);
+  const sent = lastCommand(calls).zone;
   ok(!('rangeId' in sent), 'a new zone is sent without a rangeId');
   eq(sent.blockList.join(','), '15', 'with its blocks');
 }
@@ -502,7 +507,7 @@ function lastPublish(calls) {
   root.querySelectorAll('.legend .row .badge')[0].click();
   [...root.querySelectorAll('.editor button')].find((b) => b.textContent === 'Cancel').click();
   ok(root.querySelector('.editor').hidden, 'Cancel closes the editor');
-  ok(!lastPublish(calls), 'Cancel sends nothing');
+  ok(!lastCommand(calls), 'Cancel sends nothing');
 }
 
 /* ---------- the zone type ---------- */
@@ -542,7 +547,7 @@ function typePick(root) {
   eq(segButtons(root, 0).find((b) => b.className === 'on').textContent, 'Low',
     'the type sets the sensitivity the Aqara app suggests');
   save.click();
-  const sent = JSON.parse(lastPublish(calls).payload);
+  const sent = lastCommand(calls).zone;
   eq(sent.tagId, '9.2', 'the type goes out as its tagId');
   ok(!('tagName' in sent), 'the name is the app\'s to fill in');
   eq(sent.sensitivity, 1, 'with the suggested sensitivity');
@@ -572,7 +577,7 @@ function typePick(root) {
   ev(svg.querySelector('rect.hit[data-block="15"]'), 'pointerdown');
   ev(svg, 'pointerup');
   [...root.querySelectorAll('.editor button')].find((b) => b.textContent === 'Save').click();
-  const sent = JSON.parse(lastPublish(calls).payload);
+  const sent = lastCommand(calls).zone;
   eq(sent.tagId, '3.6', 'a new zone is created with its type');
   eq(sent.sensitivity, 3, 'and that type\'s sensitivity');
 }
@@ -645,9 +650,9 @@ function typePick(root) {
   ev(svg, 'pointerup');
   ok(!save.disabled, 'a block taken out is a change');
   save.click();
-  const pub = lastPublish(calls);
-  eq(pub.topic, 'fp2companion/54ef44a1b2c3/cmd/zone_set', 'the edge is saved through zone_set');
-  const sent = JSON.parse(pub.payload);
+  const pub = lastCommand(calls);
+  eq(pub.type, 'fp2_companion/zone/set', 'the edge is saved through zone/set');
+  const sent = pub.zone;
   eq(Object.keys(sent).sort().join(','), 'blockList,rangeId', 'with its blocks and its id only');
   eq(sent.blockList.length, 287, 'one block fewer');
   ok(!sent.blockList.includes(135), 'without block 135');
@@ -699,7 +704,7 @@ function frameZones() {
   eq(root.querySelectorAll('svg.map rect.open').length, 0, 'and nothing is marked');
   eq(root.querySelectorAll('svg.map rect.hit.on').length, 264, 'the map shows the new edge');
   saveButton(root).click();
-  const sent = JSON.parse(lastPublish(calls).payload);
+  const sent = lastCommand(calls).zone;
   eq(Object.keys(sent).sort().join(','), 'blockList,rangeId', 'the edge is saved with its blocks only');
   eq(sent.blockList.length, 264, 'every block outside the room');
   ok(!sent.blockList.includes(8) && !sent.blockList.includes(120),
@@ -774,7 +779,7 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   ev(svg.querySelector('rect.hit[data-block="301"]'), 'pointerdown');
   ev(svg, 'pointerup');
   saveButton(root).click();
-  const sent = JSON.parse(lastPublish(calls).payload);
+  const sent = lastCommand(calls).zone;
   eq(Object.keys(sent).sort().join(','), 'blockList,rangeId', 'it is saved with its blocks and id only');
   eq(sent.blockList.join(','), '300', 'without the block taken out');
 }
@@ -799,7 +804,7 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   eq(attrPick(root).value, '2', 'the choice is kept across the redraw');
   ok(!saveButton(root).disabled, 'a new attribute alone is a change');
   saveButton(root).click();
-  const sent = JSON.parse(lastPublish(calls).payload);
+  const sent = lastCommand(calls).zone;
   eq(Object.keys(sent).sort().join(','), 'blockList,rangeId,regionType',
     'it is saved with its blocks, id and new attribute');
   eq(sent.regionType, 2, 'as an entrance zone');
@@ -817,7 +822,7 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   ok(![...root.querySelectorAll('.editor button')].some((b) => b.textContent === 'Delete'),
     'it is not deleted while it is still the edge');
   saveButton(root).click();
-  const sent = JSON.parse(lastPublish(calls).payload);
+  const sent = lastCommand(calls).zone;
   eq(sent.regionType, 0, 'saved as detection');
   eq(sent.name, 'Detection Zone 2', 'with its name');
   eq(sent.sensitivity, 1, 'and sensitivity 1');
@@ -850,25 +855,25 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   ok(pick.options[1].textContent.includes('First read'), 'an option says what the backup is');
   pick.value = 'zones-20261030T090122.json';
   pick.dispatchEvent(new dom.window.Event('change'));
-  const pub = lastPublish(calls);
-  eq(pub.topic, 'fp2companion/54ef44a1b2c3/cmd/preview', 'pressing a backup asks for its preview');
-  eq(pub.payload, 'zones-20261030T090122.json', 'by its name');
+  const pub = lastCommand(calls);
+  eq(pub.type, 'fp2_companion/backup/preview', 'pressing a backup asks for its preview');
+  eq(pub.name, 'zones-20261030T090122.json', 'by its name');
   ok(root.querySelector('.banner').textContent.includes('Loading'),
     'the card waits for the preview');
 
   const withPreview = states({ [E.preview]: { state: 'zones-20261030T090122.json',
     attributes: { name: 'zones-20261030T090122.json', saved_at: 1793343682,
       reason: 'first-read', zones: ZONES.slice(0, 1) } } });
-  card.hass = { states: withPreview, callService: (d, s, data) => (isLease(data) ? [] : calls).push({ d, s, data }) };
+  card.hass = { states: withPreview, callService: (d, s, data) => calls.push({ d, s, data }), callWS: ws(calls) };
   eq(root.querySelectorAll('svg.map rect.cell').length, 15, 'the map shows the backup');
   const restore = [...root.querySelectorAll('.banner button')].find((b) => b.textContent === 'Restore');
   const before = calls.length;
   restore.click();
   eq(calls.length, before, 'one press on Restore sends nothing');
   restore.click();
-  const r = lastPublish(calls);
-  eq(r.topic, 'fp2companion/54ef44a1b2c3/cmd/restore', 'the second press restores');
-  eq(r.payload, 'zones-20261030T090122.json', 'the backup that was shown');
+  const r = lastCommand(calls);
+  eq(r.type, 'fp2_companion/backup/restore', 'the second press restores');
+  eq(r.name, 'zones-20261030T090122.json', 'the backup that was shown');
   ok(root.querySelector('.banner').hidden, 'the preview closes after a restore');
 }
 
@@ -931,12 +936,13 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   email.value = 'new.user@example.com';
   password.value = 'correct horse';
   form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-  const pub = lastPublish(calls);
-  eq(pub.topic, 'fp2companion/cmd/login', 'the form sends login');
-  const body = JSON.parse(pub.payload);
+  const pub = lastCommand(calls);
+  eq(pub.type, 'fp2_companion/login', 'the form sends login');
+  ok(!('device' in pub), 'to the app, not to a device');
+  const body = pub;
   eq(body.account, 'new.user@example.com', 'with the account');
   eq(Buffer.from(body.password_rsa, 'base64').length, 128, 'and a 1024-bit RSA block');
-  ok(!pub.payload.includes('correct horse'), 'never the clear password');
+  ok(!JSON.stringify(pub).includes('correct horse'), 'never the clear password');
   eq(password.value, '', 'the password field is cleared at once');
   ok(root.querySelector('.message').textContent.includes('Signing in'),
     'the card says it is signing in');
@@ -956,7 +962,7 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   out.click();
   eq(calls.length, before, 'one press on Log out sends nothing');
   out.click();
-  eq(lastPublish(calls).topic, 'fp2companion/cmd/logout', 'the second press logs out');
+  eq(lastCommand(calls).type, 'fp2_companion/logout', 'the second press logs out');
 }
 
 {
@@ -1102,9 +1108,27 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   email.value = 'a@example.com';
   password.value = 'pw';
   form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-  const pub = lastPublish(calls);
-  eq(pub.topic, 'fp2companion/cmd/login', 'a sign-in goes to the app topic');
-  eq(JSON.parse(pub.payload).country, 'US', 'with the chosen country');
+  const pub = lastCommand(calls);
+  eq(pub.type, 'fp2_companion/login', 'a sign-in goes to the app');
+  eq(pub.country, 'US', 'with the chosen country');
+}
+
+/* ---------- a command the integration refuses ---------- */
+async function refusalChecks() {
+  const card = new Card();
+  card.setConfig({ type: 'custom:fp2-companion-card' });
+  card.hass = { states: states(), callService: () => {},
+    callWS: () => Promise.reject({ code: 'unauthorized', message: 'Unauthorized' }) };
+  document.body.appendChild(card);
+  const root = card.shadowRoot;
+  const out = [...root.querySelectorAll('.account button')].find((b) => b.textContent === 'Log out');
+  out.click();
+  out.click();
+  await Promise.resolve();
+  await Promise.resolve();
+  eq(root.querySelector('.message').textContent, 'Only an admin user can change this.',
+    'a user who is not an admin is told why a command did nothing');
+  card.remove();
 }
 
 /* ---------- the country to offer first ---------- */
@@ -1130,7 +1154,7 @@ const BOUNDARY = { rangeId: 103, name: 'Boundary', regionType: 3, sensitivity: 1
   email.value = 'a@example.com';
   password.value = 'pw';
   form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-  ok(!lastPublish(calls), 'a sign-in without a country sends nothing');
+  ok(!lastCommand(calls), 'a sign-in without a country sends nothing');
   country.value = 'GR';
   ev(country, 'change');
   ok(!submit.disabled, 'a chosen country enables Sign in');
@@ -1226,17 +1250,21 @@ print(key.decrypt(base64.b64decode(sys.argv[2]), padding.PKCS1v15()).decode())
 }
 
 /* ---------- live dots ---------- */
-/* A fake of Home Assistant's websocket connection: it records the MQTT
- * subscription and lets the test deliver messages on it. */
+/* A fake of Home Assistant's websocket connection: it records the live
+ * subscriptions in `log`, one entry when one opens and one when it closes,
+ * and lets the test deliver messages on them. */
 function fakeConnection(reject = false) {
-  const conn = { subs: [], unsubs: 0 };
+  const conn = { subs: [], unsubs: 0, log: [] };
   conn.subscribeMessage = (cb, msg) => {
     if (reject) return Promise.reject(new Error('Unauthorized'));
     conn.subs.push({ cb, msg });
-    return Promise.resolve(() => { conn.unsubs += 1; });
+    conn.log.push({ device: msg.device, on: true });
+    return Promise.resolve(() => {
+      conn.unsubs += 1;
+      conn.log.push({ device: msg.device, on: false });
+    });
   };
-  conn.send = (payload) => conn.subs.forEach((x) => x.cb({
-    topic: x.msg.topic, payload: JSON.stringify(payload) }));
+  conn.send = (payload) => conn.subs.forEach((x) => x.cb(payload));
   return conn;
 }
 
@@ -1245,12 +1273,10 @@ async function liveChecks() {
     const conn = fakeConnection();
     const { card, root, leases } = mount(undefined, conn);
     await Promise.resolve();
-    const lease = JSON.parse(leases[0].data.payload);
-    eq(leases[0].data.topic, 'fp2companion/54ef44a1b2c3/cmd/track', 'a lease names the device');
-    ok(lease.on === true && typeof lease.client === 'string' && lease.client.length > 4,
-      'a lease carries this tab as its client');
-    eq(conn.subs[0] && conn.subs[0].msg.type, 'mqtt/subscribe', 'the card listens through HA MQTT');
-    eq(conn.subs[0] && conn.subs[0].msg.topic, 'fp2companion/54ef44a1b2c3/live', 'on the device live topic');
+    eq(conn.subs[0] && conn.subs[0].msg.type, 'fp2_companion/live/subscribe',
+      'the card subscribes to the integration\'s live view');
+    eq(conn.subs[0] && conn.subs[0].msg.device, '54ef44a1b2c3', 'for the device on screen');
+    ok(leases[0].on, 'and the open subscription is its lease');
     eq(root.querySelector('.livebar').textContent, 'Connecting to the live view',
       'the live line before a push');
     ok(!root.querySelector('.livebar').hidden, 'is shown under the map');
@@ -1291,9 +1317,7 @@ async function liveChecks() {
       'and are redrawn on the new map');
 
     card.remove();
-    eq(conn.unsubs, 1, 'a removed card stops listening');
-    const off = JSON.parse(leases[leases.length - 1].data.payload);
-    ok(off.on === false && off.client === lease.client, 'and gives its lease back');
+    eq(conn.unsubs, 1, 'a removed card stops listening, which gives its lease back');
   }
   {
     /* The FP2 sends no push while it tracks nobody (2026-10-31). */
@@ -1321,9 +1345,8 @@ async function liveChecks() {
     await Promise.resolve();
     await Promise.resolve();
     eq(root.querySelector('.livebar').textContent, 'Live view needs an admin user',
-      'a user without MQTT access is told so');
-    eq(JSON.parse(leases[leases.length - 1].data.payload).on, false,
-      'and the lease is given back');
+      'a user the integration refuses is told so');
+    eq(leases.length, 0, 'and holds no lease');
   }
   {
     /* Home Assistant names a user who is not an admin, so the card says so
@@ -1342,7 +1365,8 @@ async function liveChecks() {
   }
   {
     /* Refused to an admin, the subscription failed for another reason (a
-     * reconnecting websocket, MQTT reloading): no admin message, and a retry. */
+     * reconnecting websocket, the integration reloading): no admin message,
+     * and a retry. */
     const card = new Card();
     card.setConfig({ type: 'custom:fp2-companion-card' });
     card.hass = { states: states(), connection: fakeConnection(true),
@@ -1366,10 +1390,11 @@ async function liveChecks() {
       'and shows the full name and area');
     pick.value = OFFICE.key;
     ev(pick, 'change');
-    const topics = leases.map((x) => [x.data.topic, JSON.parse(x.data.payload).on]);
-    eq(JSON.stringify(topics.slice(-2)), JSON.stringify([
-      ['fp2companion/54ef44a1b2c3/cmd/track', false],
-      ['fp2companion/54ef44d4e5f6/cmd/track', true]]), 'switching device moves the lease');
+    await Promise.resolve();
+    const moves = leases.map((x) => [x.device, x.on]);
+    eq(JSON.stringify(moves.slice(-2)), JSON.stringify([
+      ['54ef44a1b2c3', false],
+      ['54ef44d4e5f6', true]]), 'switching device moves the lease');
     card.remove();
   }
   {
@@ -1394,26 +1419,29 @@ async function viewChecks() {
   ok(obs && obs.on, 'the card watches whether it is on screen');
   const n = leases.length;
   obs.cb([{ isIntersecting: false }]);
-  eq(JSON.parse(leases[leases.length - 1].data.payload).on, false,
+  eq(leases[leases.length - 1].on, false,
     'scrolled away, the lease is given back');
   eq(leases.length, n + 1, 'once');
   obs.cb([{ isIntersecting: false }]);
   eq(leases.length, n + 1, 'and not again while it stays away');
   obs.cb([{ isIntersecting: true }]);
-  eq(JSON.parse(leases[leases.length - 1].data.payload).on, true,
+  eq(leases[leases.length - 1].on, true,
     'back on screen, the lease is taken again');
   card.shadowRoot.querySelectorAll('.panetabs button')[1].click();
-  eq(JSON.parse(leases[leases.length - 1].data.payload).on, false,
+  /* A subscription that has just opened closes once its promise settles. */
+  await Promise.resolve();
+  await Promise.resolve();
+  eq(leases[leases.length - 1].on, false,
     'the Settings pane has no map, so the lease is given back');
   card.shadowRoot.querySelectorAll('.panetabs button')[0].click();
-  eq(JSON.parse(leases[leases.length - 1].data.payload).on, true,
+  eq(leases[leases.length - 1].on, true,
     'and taken again on the Zones pane');
   card.remove();
   ok(!obs.on, 'a removed card stops watching');
   delete global.IntersectionObserver;
 }
 
-liveChecks().then(viewChecks).then(() => {
+liveChecks().then(viewChecks).then(refusalChecks).then(() => {
   /* Every card left attached holds a renewal timer. */
   document.body.innerHTML = '';
   console.log(`${checks - failures}/${checks} checks passed`);
